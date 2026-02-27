@@ -9,7 +9,7 @@ class RetrievalService:
             host="localhost",
             database="rdc_news",
             user="postgres",
-            password="password"
+            password="postgres"
         )
 
     def search(self, embedding: list, limit: int = 5):
@@ -24,3 +24,4 @@ class RetrievalService:
                 (embedding, limit)
             )
             return cur.fetchall()
+    
