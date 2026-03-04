@@ -69,4 +69,14 @@ The platform is composed of three main layers:
 
 ##  Development Setup
 
-### 
+### AI Service (Python)
+Le service d'IA gère la vectorisation des articles et la recherche sémantique.
+- **Chemin** : `ai-service/`
+- **Installation** : Voir le [README détaillé de ai-service](ai-service/README.md).
+- **Statut** : Base de données initialisée avec ~2000 articles du corpus RDC.
+
+### Backend (Symfony)
+... (à compléter)
+
+### Frontend (Next.js)
+... (à compléter)

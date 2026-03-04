@@ -1,91 +1,81 @@
-# ai-service (FastAPI + pgvector)
+# RDC News Intelligence - AI Service
 
-## Description
-Microservice d’intelligence artificielle pour le projet "rdc-news-intelligence". Ce service permet de stocker des articles, générer des embeddings avec Sentence Transformers, et effectuer des recherches sémantiques via PostgreSQL + pgvector.
+Ce service est le moteur d'intelligence artificielle du projet **RDC News Intelligence**. Il utilise FastAPI, PostgreSQL avec l'extension `pgvector` et Sentence Transformers pour le traitement sémantique des actualités de la République Démocratique du Congo.
 
-## Structure du projet
-```
-ai-service/
-│
-├── app/
-│   ├── main.py
-│   ├── core/config.py
-│   ├── db/session.py
-│   ├── db/models.py
-│   ├── schemas/article.py
-│   ├── services/embedding_service.py
-│   ├── services/article_service.py
-│   └── api/routes/articles.py
-│
-├── requirements.txt
-└── .env
-```
+## 🚀 Fonctionnalités réalisées
 
-## Fonctionnalités principales
-- **Connexion à PostgreSQL** (avec psycopg2)
-- **Utilisation de pgvector** pour stocker les embeddings
-- **Génération d’embeddings** avec Sentence Transformers (all-MiniLM-L6-v2, 384 dimensions)
-- **Stockage d’articles** avec embeddings
-- **Recherche sémantique** (cosine similarity, top 5 résultats)
+### 1. Base de données Vectorielle
+- **Configuration PostgreSQL + pgvector** : Mise en place de l'extension `vector` pour stocker et rechercher des vecteurs de haute dimension.
+- **Modèle de données** : Création de la table `articles` incluant une colonne `embedding` de type `VECTOR(384)`.
+- **Indexation** : Support de la recherche par similarité cosinus (`<=>`).
 
-## Endpoints
-- `POST /articles` : stocke un article et son embedding
-- `POST /query` : recherche sémantique sur les articles
+### 2. Chargement et Vectorisation du Dataset
+- **Dataset utilisé** : `bernard-ng/drc-news-corpus` (Hugging Face).
+- **Modèle d'Embedding** : `sentence-transformers/all-MiniLM-L6-v2` (dimension 384).
+- **Pipeline de chargement** : Script automatique (`app/services/load_dataset.py`) qui télécharge, vectorise et insère les articles en base de données par lots.
+- **État actuel** : Environ **1986 articles** ont été chargés et vectorisés avec succès.
 
-## Détail des fichiers
-- `app/main.py` : Entrée FastAPI, inclut les routes
-- `app/core/config.py` : Gestion des variables d’environnement (.env)
-- `app/db/session.py` : Connexion PostgreSQL
-- `app/db/models.py` : Définition SQL de la table articles
-- `app/schemas/article.py` : Modèles Pydantic pour validation
-- `app/services/embedding_service.py` : Génération d’embeddings
-- `app/services/article_service.py` : Logique CRUD et recherche
-- `app/api/routes/articles.py` : Routes API pour articles et recherche
+### 3. API FastAPI
+- **Recherche Sémantique** : Endpoint `POST /query` permettant de poser une question en langage naturel et d'obtenir les 5 articles les plus pertinents.
+- **Gestion des articles** : Endpoint `POST /articles` pour l'ajout manuel d'articles.
+- **Administration** : Endpoint `POST /admin/load` pour déclencher ou limiter le chargement du dataset en arrière-plan.
+- **Correction technique** : Mise en place d'un cast explicite `::vector` dans les requêtes SQL pour assurer la compatibilité avec `psycopg2`.
 
-## Installation
-1. Installer les dépendances :
+## 🛠 Installation et Configuration
+
+### Prérequis
+- Python 3.10+
+- PostgreSQL avec l'extension `pgvector` installée.
+
+### Installation
+1. Entrez dans le dossier du service :
+   ```bash
+   cd ai-service
+   ```
+2. Créez et activez l'environnement virtuel :
+   ```bash
+   python3 -m venv .env
+   source .env/bin/activate
+   ```
+3. Installez les dépendances :
    ```bash
    pip install -r requirements.txt
    ```
-2. Configurer la base PostgreSQL avec pgvector et la table `articles` (voir db/models.py)
-3. Lancer le serveur :
-   ```bash
-   uvicorn app.main:app --reload
-   ```
 
-## Test rapide
-- Accéder à la doc interactive : http://localhost:8000/docs
-- Utiliser Swagger pour tester les endpoints
-
-## Variables d’environnement (.env)
-```
+### Configuration (.env)
+Créez un fichier `.env` ou `.env_file` à la racine de `ai-service` :
+```env
 DB_HOST=localhost
 DB_PORT=5432
-DB_NAME=ai_db
-DB_USER=postgres
-DB_PASSWORD=password
+DB_NAME=rdc_news
+DB_USER=votre_utilisateur
+DB_PASSWORD=votre_mot_de_passe
+DATABASE_URL=postgresql://user:pass@host:port/dbname
 ```
 
-## requirements.txt
-```
-fastapi
-uvicorn
-psycopg2-binary
-sentence-transformers
-python-dotenv
+## 📖 Utilisation
+
+### Lancer l'application
+```bash
+export PYTHONPATH=$(pwd)
+python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-## Exemple SQL table articles
-```sql
-CREATE TABLE articles (
-    id SERIAL PRIMARY KEY,
-    title TEXT,
-    content TEXT,
-    embedding VECTOR(384),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+### Tester la recherche sémantique
+Utilisez `curl` pour poser une question :
+```bash
+curl -X POST "http://127.0.0.1:8000/query" \
+     -H "Content-Type: application/json" \
+     -d '{"query": "Quelle est la situation des élections en RDC ?"}'
 ```
 
-## Prochaine étape
-- Générer un Dockerfile et docker-compose pour PostgreSQL + pgvector
-- Intégration avec le backend Symfony
+### Accéder à la documentation
+Une fois l'application lancée, la documentation Swagger est disponible sur :
+`http://127.0.0.1:8000/docs`
+
+## 📂 Structure du projet
+- `app/main.py` : Point d'entrée de l'API.
+- `app/api/routes/` : Définition des endpoints.
+- `app/services/` : Logique métier (embedding, recherche, chargement dataset).
+- `app/db/` : Session et modèles de base de données.
+- `app/core/` : Configuration et variables d'environnement.

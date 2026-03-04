@@ -6,7 +6,7 @@ from app.services.load_dataset import attach_to_app
 app = FastAPI()
 
 # Attach dataset loader to startup; run in background by default
-attach_to_app(app, background=True, limit=1000)
+attach_to_app(app, background=True, limit=None)
 
 # Try to include router from possible locations without raising at import time
 try:
