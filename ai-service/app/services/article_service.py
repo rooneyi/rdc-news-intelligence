@@ -22,7 +22,7 @@ def search_similar(query_embedding):
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "SELECT id, title, content FROM articles ORDER BY embedding <=> %s LIMIT 5;",
+        "SELECT id, title, content FROM articles ORDER BY embedding <=> %s::vector LIMIT 5;",
         (query_embedding,)
     )
     results = cur.fetchall()
