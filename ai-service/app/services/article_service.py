@@ -1,11 +1,11 @@
 from app.db.session import get_db
-from app.services.embedding_service import generate_embedding
+from app.services.embedding_service import EmbeddingService
 from app.schemas.article import ArticleCreate, ArticleOut
 import psycopg2
 
-
 def create_article(title: str, content: str):
-    embedding = generate_embedding(content)
+    embedding_service = EmbeddingService()
+    embedding = embedding_service.generate(content)
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
@@ -17,7 +17,6 @@ def create_article(title: str, content: str):
     cur.close()
     conn.close()
     return ArticleOut(id=article[0], title=article[1], content=article[2])
-
 
 def search_similar(query_embedding):
     conn = get_db()
