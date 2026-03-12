@@ -19,11 +19,13 @@ class QueryRequest(BaseModel):
 
 embedding_service = EmbeddingService()
 
-@router.post("/query")
+@router.post("/query", summary="Search Similar Articles", tags=["Articles"])
 def query_articles(payload: QueryRequest):
+    """Rechercher des articles similaires par requête texte"""
     query_embedding = embedding_service.generate(payload.query)
     results = search_similar(query_embedding)
-    return {"results": [r.dict() for r in results]}
+    # Compatibilité Pydantic v1 et v2
+    return {"results": [r.model_dump() if hasattr(r, 'model_dump') else r.dict() for r in results]}
 
 
 # Admin endpoint to trigger dataset loading on demand
