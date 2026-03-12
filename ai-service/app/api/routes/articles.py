@@ -1,7 +1,8 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
-from app.schemas.article import ArticleCreate, ArticleOut
+from app.schemas.article import ArticleCreate, ArticleOut, RAGRequest, RAGResponse
 from app.services.article_service import create_article, search_similar
 from app.services.embedding_service import EmbeddingService
+from app.services.rag_service import RAGService
 from app.services.load_dataset import load_and_insert
 from pydantic import BaseModel
 import os
@@ -18,6 +19,7 @@ class QueryRequest(BaseModel):
     query: str
 
 embedding_service = EmbeddingService()
+rag_service = RAGService()
 
 @router.post("/query", summary="Search Similar Articles", tags=["Articles"])
 def query_articles(payload: QueryRequest):
@@ -26,6 +28,29 @@ def query_articles(payload: QueryRequest):
     results = search_similar(query_embedding)
     # Compatibilité Pydantic v1 et v2
     return {"results": [r.model_dump() if hasattr(r, 'model_dump') else r.dict() for r in results]}
+
+
+@router.post("/rag", response_model=RAGResponse, summary="RAG - Generate Summary with Sources", tags=["RAG"])
+def rag_query(payload: RAGRequest):
+    """
+    **RAG (Retrieval-Augmented Generation)**
+
+    Génère un résumé intelligent basé sur les articles les plus pertinents.
+
+    - Récupère les top K articles similaires
+    - Génère un résumé contextualisé
+    - Retourne les sources avec liens et extraits
+
+    **Exemple de requête:**
+    ```json
+    {
+        "query": "Quelle est la situation politique en RDC?",
+        "top_k": 5
+    }
+    ```
+    """
+    result = rag_service.generate_answer(payload.query, payload.top_k)
+    return RAGResponse(**result)
 
 
 # Admin endpoint to trigger dataset loading on demand
