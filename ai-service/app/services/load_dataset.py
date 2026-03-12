@@ -7,6 +7,14 @@ import asyncio
 import logging
 from typing import Optional
 
+# Load environment variables (if not already loaded by app/main.py)
+# This ensures the script works both standalone and within the app
+if not os.getenv("DB_HOST"):
+    dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env_file")
+    if not os.path.exists(dotenv_path):
+        dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
+    load_dotenv(dotenv_path=dotenv_path)
+
 from app.core.config import DB_HOST, DB_NAME, DB_USER, DB_PASSWORD, DATABASE_URL
 
 logger = logging.getLogger(__name__)
@@ -116,24 +124,14 @@ def load_and_insert(
 
 
 def attach_to_app(app, *, background: bool = True, **load_kwargs):
-    """
-    Register a startup event on a FastAPI app to run the dataset load.
-
-    Usage in your FastAPI app (app/main.py):
-
-        from fastapi import FastAPI
-        from app.services.load_dataset import attach_to_app
-
-        app = FastAPI()
-        attach_to_app(app, background=True, limit=1000)
-
-    If background is True, the load runs in a threadpool so startup isn't blocked.
-    """
-
-    # guard: only schedule if DB credentials are present
     if not (os.getenv("DATABASE_URL") or os.getenv("DB_URL") or os.getenv("DB_HOST")):
         logger.warning("Database credentials not found in environment; dataset load will be skipped on startup.\nSet DATABASE_URL or DB_HOST/DB_USER/DB_PASSWORD to enable automatic loading.")
         return
+
+    dataset_name = load_kwargs.get("dataset_name", "bernard-ng/drc-news-corpus")
+    model_name = load_kwargs.get("model_name", "sentence-transformers/all-MiniLM-L6-v2")
+    limit = load_kwargs.get("limit", None)
+    commit_every = load_kwargs.get("commit_every", 500)
 
     if background:
         @app.on_event("startup")
@@ -142,7 +140,7 @@ def attach_to_app(app, *, background: bool = True, **load_kwargs):
             loop = asyncio.get_running_loop()
             logger.info("Scheduling dataset load in background (startup)")
             # we intentionally don't await so the app can start
-            loop.run_in_executor(None, load_and_insert, None, load_kwargs.get("dataset_name", "bernard-ng/drc-news-corpus"), load_kwargs.get("model_name", "sentence-transformers/all-MiniLM-L6-v2"), load_kwargs.get("limit", None), load_kwargs.get("commit_every", 500))
+            loop.run_in_executor(None, load_and_insert, None, dataset_name, model_name, limit, commit_every)
 
     else:
         @app.on_event("startup")
@@ -150,8 +148,7 @@ def attach_to_app(app, *, background: bool = True, **load_kwargs):
             logger.info("Running dataset load during startup (blocking)")
             # run in threadpool and await so startup waits for completion
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, load_and_insert, None, load_kwargs.get("dataset_name", "bernard-ng/drc-news-corpus"), load_kwargs.get("model_name", "sentence-transformers/all-MiniLM-L6-v2"), load_kwargs.get("limit", None), load_kwargs.get("commit_every", 500))
-
+            await loop.run_in_executor(None, load_and_insert, None, dataset_name, model_name, limit, commit_every)
 
 if __name__ == "__main__":
     # Limit for quick testing
