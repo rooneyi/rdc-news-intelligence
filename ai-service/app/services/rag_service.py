@@ -95,13 +95,16 @@ class RAGService:
         """
         sources = []
         for idx, article in enumerate(articles, 1):
+            url = article.link or f"/articles/{article.id}"
             sources.append({
                 "id": article.id,
                 "rank": idx,
                 "title": article.title,
                 "excerpt": article.content[:200] + "..." if len(article.content) > 200 else article.content,
-                "url": f"/articles/{article.id}",  # URL relative
-                "relevance_score": f"Top {idx}"
+                "url": url,
+                "relevance_score": f"Top {idx}",
+                "source_id": article.source_id,
+                "hash": article.hash,
             })
 
         return sources

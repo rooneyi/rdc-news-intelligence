@@ -1,28 +1,30 @@
 import logging
 from typing import Optional
-from app.db.session import get_db
+from app.db.session import get_db_connection
 from app.services.embedding_service import EmbeddingService
+from app.services.retrieval_service import RetrievalService
 from app.schemas.article import ArticleCreate, ArticleOut
 
 logger = logging.getLogger(__name__)
 embedding_service = EmbeddingService()
+retrieval_service = RetrievalService()
 
 
 def create_article(title: str, content: str) -> ArticleOut:
     """Créer un article avec embedding et le sauvegarder en DB"""
     try:
         embedding = embedding_service.generate(content)
-        conn = get_db()
+        conn = get_db_connection()
         cur = conn.cursor()
         try:
             cur.execute(
-                "INSERT INTO articles (title, content, embedding) VALUES (%s, %s, %s) RETURNING id, title, content",
+                "INSERT INTO articles (title, content, embedding) VALUES (%s, %s, %s) RETURNING id, title, content, link, source_id, hash",
                 (title, content, embedding)
             )
             article = cur.fetchone()
             conn.commit()
             logger.info(f"Article created with ID: {article[0]}")
-            return ArticleOut(id=article[0], title=article[1], content=article[2])
+            return ArticleOut(id=article[0], title=article[1], content=article[2], link=article[3], source_id=article[4], hash=article[5])
         finally:
             cur.close()
             conn.close()
@@ -43,7 +45,7 @@ def save_crawled_article(article) -> Optional[ArticleOut]:
         title = article.title
         source_id = article.source_id
 
-        conn = get_db()
+        conn = get_db_connection()
         cur = conn.cursor()
         try:
             # Vérifier doublon par link ou hash
@@ -61,13 +63,13 @@ def save_crawled_article(article) -> Optional[ArticleOut]:
             cur.execute(
                 """INSERT INTO articles (title, content, source_id, link, hash, embedding)
                    VALUES (%s, %s, %s, %s, %s, %s)
-                   RETURNING id, title, content""",
+                   RETURNING id, title, content, link, source_id, hash""",
                 (title, content, source_id, link, hash_val, embedding)
             )
             row = cur.fetchone()
             conn.commit()
             logger.info(f"Crawled article saved — id={row[0]} source={source_id}")
-            return ArticleOut(id=row[0], title=row[1], content=row[2])
+            return ArticleOut(id=row[0], title=row[1], content=row[2], link=row[3], source_id=row[4], hash=row[5])
         finally:
             cur.close()
             conn.close()
@@ -78,20 +80,4 @@ def save_crawled_article(article) -> Optional[ArticleOut]:
 
 def search_similar(query_embedding: list, limit: int = 5) -> list[ArticleOut]:
     """Rechercher des articles similaires par vecteur"""
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        try:
-            cur.execute(
-                "SELECT id, title, content FROM articles ORDER BY embedding <=> %s::vector LIMIT %s",
-                (query_embedding, limit)
-            )
-            results = cur.fetchall()
-            logger.debug(f"Found {len(results)} similar articles")
-            return [ArticleOut(id=r[0], title=r[1], content=r[2]) for r in results]
-        finally:
-            cur.close()
-            conn.close()
-    except Exception as e:
-        logger.error(f"Error searching similar articles: {e}")
-        raise
+    return retrieval_service.search(query_embedding, limit)

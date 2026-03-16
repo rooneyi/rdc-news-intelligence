@@ -7,19 +7,8 @@ logger = logging.getLogger(__name__)
 
 
 def get_db():
-    """Simple connection getter - uses individual params"""
-    try:
-        conn = psycopg2.connect(
-            host=DB_HOST,
-            port=DB_PORT,
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD
-        )
-        return conn
-    except Exception as e:
-        logger.error("Failed to connect to Postgres: %s", e)
-        raise RuntimeError(f"Database connection failed: {e}")
+    """Backward-compatible alias that uses the smarter connection helper."""
+    return get_db_connection()
 
 
 def get_db_connection():

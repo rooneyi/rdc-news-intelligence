@@ -13,6 +13,9 @@ class ArticleOut(BaseModel):
     id: int
     title: str
     content: str
+    link: Optional[str] = None
+    source_id: Optional[str] = None
+    hash: Optional[str] = None
 
 
 class ArticleSource(BaseModel):

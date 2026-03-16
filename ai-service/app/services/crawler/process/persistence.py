@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Optional
+import logging
 
 import httpx
 
 from app.services.crawler.config import CrawlerSettings
 from app.services.crawler.models import Article
+
+logger = logging.getLogger(__name__)
 
 
 class JsonlPersistor:
@@ -32,6 +35,8 @@ class BackendForwarder:
         self.token = settings.backend_token
         self.enabled = bool(self.endpoint)
         self._client = httpx.Client(timeout=20) if self.enabled else None
+        if not self.enabled:
+            logger.info("Backend forwarding disabled: set CRAWLER_BACKEND_ENDPOINT to push to API")
 
     def forward(self, article: Article) -> Optional[httpx.Response]:
         if not self.enabled:
@@ -40,7 +45,7 @@ class BackendForwarder:
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         return self._client.post(
-            f"{self.endpoint.rstrip('/')}/articles",
+            f"{self.endpoint.rstrip('/')}/crawler/articles",
             json=article.to_backend_payload(),
             headers=headers,
             timeout=20,
@@ -49,4 +54,3 @@ class BackendForwarder:
     def close(self):
         if self._client:
             self._client.close()
-
