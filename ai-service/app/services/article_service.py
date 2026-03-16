@@ -1,20 +1,17 @@
 import logging
+from typing import Optional
 from app.db.session import get_db
 from app.services.embedding_service import EmbeddingService
 from app.schemas.article import ArticleCreate, ArticleOut
 
 logger = logging.getLogger(__name__)
-embedding_service = EmbeddingService()  # Singleton instance
+embedding_service = EmbeddingService()
 
 
 def create_article(title: str, content: str) -> ArticleOut:
     """Créer un article avec embedding et le sauvegarder en DB"""
     try:
-        # Générer l'embedding
-        logger.debug(f"Generating embedding for article: {title[:50]}")
         embedding = embedding_service.generate(content)
-
-        # Insérer en DB
         conn = get_db()
         cur = conn.cursor()
         try:
@@ -31,6 +28,51 @@ def create_article(title: str, content: str) -> ArticleOut:
             conn.close()
     except Exception as e:
         logger.error(f"Error creating article: {e}")
+        raise
+
+
+def save_crawled_article(article) -> Optional[ArticleOut]:
+    """
+    Sauvegarder un article crawlé en DB avec embedding.
+    Retourne None si l'article est un doublon (même link ou même hash).
+    """
+    try:
+        link = str(article.link)
+        hash_val = article.hash
+        content = article.body
+        title = article.title
+        source_id = article.source_id
+
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            # Vérifier doublon par link ou hash
+            cur.execute(
+                "SELECT id FROM articles WHERE link = %s OR hash = %s LIMIT 1",
+                (link, hash_val)
+            )
+            if cur.fetchone():
+                logger.debug(f"Doublon ignoré: {link}")
+                return None
+
+            # Générer embedding sur le body
+            embedding = embedding_service.generate(content)
+
+            cur.execute(
+                """INSERT INTO articles (title, content, source_id, link, hash, embedding)
+                   VALUES (%s, %s, %s, %s, %s, %s)
+                   RETURNING id, title, content""",
+                (title, content, source_id, link, hash_val, embedding)
+            )
+            row = cur.fetchone()
+            conn.commit()
+            logger.info(f"Crawled article saved — id={row[0]} source={source_id}")
+            return ArticleOut(id=row[0], title=row[1], content=row[2])
+        finally:
+            cur.close()
+            conn.close()
+    except Exception as e:
+        logger.error(f"Error saving crawled article: {e}")
         raise
 
 
