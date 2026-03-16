@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+import re
 from app.services.embedding_service import EmbeddingService
 from app.services.retrieval_service import RetrievalService
 from app.schemas.article import ArticleOut
@@ -70,28 +70,24 @@ class RAGService:
         Pour l'instant: résumé extractif simple
         TODO: Intégrer un LLM (OpenAI, HuggingFace, etc.)
         """
-        # Concaténer les contenus des articles
-        combined_text = "\n\n".join([
-            f"**{article.title}**\n{article.content[:500]}..."
-            for article in articles[:3]  # Top 3 articles
-        ])
+        bullets = []
+        for article in articles[:5]:
+            snippet = self._extract_snippet(article.content)
+            bullets.append(f"- **{article.title}**: {snippet}")
 
-        # Résumé simple pour commencer
-        summary = f"""**Résumé basé sur {len(articles)} articles pertinents:**
-
-En réponse à votre requête "{query}", voici les informations clés trouvées dans notre base de données d'actualités RDC:
-
-{combined_text}
-
-**Points clés:**
-- {len(articles)} articles pertinents identifiés
-- Sources diverses couvrant le sujet
-- Informations extraites de la base de données RDC News Intelligence
-
-**Note:** Ce résumé est généré automatiquement. Consultez les sources ci-dessous pour plus de détails.
-"""
+        summary = (
+            f"Synthèse pour la requête \"{query}\" basée sur {len(articles)} articles pertinents:\n"
+            + "\n".join(bullets)
+        )
 
         return summary
+
+    def _extract_snippet(self, content: str, max_sentences: int = 2) -> str:
+        sentences = re.split(r"(?<=[.!?])\s+", content)
+        snippet = " ".join(sentences[:max_sentences]).strip()
+        if len(snippet) > 300:
+            snippet = snippet[:300].rstrip() + "..."
+        return snippet or content[:200]
 
     def _format_sources(self, articles: list[ArticleOut]) -> list[dict]:
         """
@@ -130,4 +126,3 @@ class RAGServiceWithLLM(RAGService):
         # TODO: Appeler le LLM avec un prompt approprié
         # Pour l'instant, utilise la version de base
         return super()._generate_summary(query, articles)
-

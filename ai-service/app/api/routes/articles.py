@@ -1,9 +1,11 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from app.schemas.article import ArticleCreate, ArticleOut, RAGRequest, RAGResponse
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from app.services.article_service import create_article, search_similar
 from app.services.embedding_service import EmbeddingService
 from app.services.rag_service import RAGService
 from app.services.load_dataset import load_and_insert
+from app.schemas.article import ArticleCreate, ArticleOut, RAGRequest, RAGResponse
 from pydantic import BaseModel
 import os
 
