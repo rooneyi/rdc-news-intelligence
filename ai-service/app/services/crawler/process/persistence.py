@@ -32,7 +32,7 @@ class BackendForwarder:
 
     def __init__(self, settings: CrawlerSettings):
         self.endpoint = settings.backend_endpoint
-        self.token = settings.backend_token
+        # Token intentionally ignored: backend FastAPI routes are open for crawler
         self.enabled = bool(self.endpoint)
         self._client = httpx.Client(timeout=20) if self.enabled else None
         if not self.enabled:
@@ -42,8 +42,7 @@ class BackendForwarder:
         if not self.enabled:
             return None
         headers = {"Content-Type": "application/json"}
-        if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
+        # No Authorization header: backend does not require a token for crawler routes
         return self._client.post(
             f"{self.endpoint.rstrip('/')}/crawler/articles",
             json=article.to_backend_payload(),

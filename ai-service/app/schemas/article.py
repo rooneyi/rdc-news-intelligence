@@ -5,6 +5,11 @@ from typing import List, Optional
 class ArticleCreate(BaseModel):
     title: str
     content: str
+    link: Optional[str] = None
+    source_id: Optional[str] = None
+    hash: Optional[str] = None
+    categories: Optional[List[str]] = None
+    image: Optional[str] = None
 
 
 class ArticleOut(BaseModel):
@@ -16,6 +21,8 @@ class ArticleOut(BaseModel):
     link: Optional[str] = None
     source_id: Optional[str] = None
     hash: Optional[str] = None
+    categories: Optional[List[str]] = None
+    image: Optional[str] = None
 
 
 class ArticleSource(BaseModel):

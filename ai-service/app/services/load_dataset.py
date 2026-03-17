@@ -79,6 +79,9 @@ def load_and_insert(
 
 
 def attach_to_app(app, *, background: bool = True, **load_kwargs):
+    if os.getenv("DISABLE_DATASET_AUTOLOAD", "").lower() in {"1", "true", "yes"}:
+        logger.info("Dataset autoload disabled by DISABLE_DATASET_AUTOLOAD")
+        return
     if not (os.getenv("DATABASE_URL") or os.getenv("DB_URL") or os.getenv("DB_HOST")):
         logger.warning("Database credentials not found in environment; dataset load will be skipped on startup.\nSet DATABASE_URL or DB_HOST/DB_USER/DB_PASSWORD to enable automatic loading.")
         return

@@ -17,7 +17,10 @@ router = APIRouter()
 @router.post("/articles", response_model=ArticleOut, summary="Create Article", tags=["Articles"])
 async def post_article(article: ArticleCreate):
     """Ajoute un nouvel article avec embedding."""
-    return create_article(article.title, article.content)
+    result = create_article(article)
+    if result is None:
+        raise HTTPException(status_code=409, detail="Article déjà présent (link/hash)")
+    return result
 
 
 # ── Crawler → DB ─────────────────────────────────────────────────────────────

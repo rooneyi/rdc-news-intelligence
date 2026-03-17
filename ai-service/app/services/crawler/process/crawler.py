@@ -10,7 +10,7 @@ from app.services.crawler.http.http_client import HttpError, SyncHttpClient
 from app.services.crawler.http.open_graph import OpenGraphParser
 from app.services.crawler.models import Article
 from app.services.crawler.process.persistence import BackendForwarder, JsonlPersistor
-from app.services.crawler.utils import make_hash, sanitize_text
+from app.services.crawler.utils import make_hash, sanitize_text, infer_categories
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ class SyncCrawler:
             link=url,
             title=sanitize_text(title) or url,
             body=body,
-            categories=[],
+            categories=infer_categories(url),
             hash=make_hash(url),
             metadata=metadata,
         )
@@ -84,4 +84,3 @@ class SyncCrawler:
         paragraphs = soup.find_all("p")
         text = "\n".join([p.get_text(" ", strip=True) for p in paragraphs])
         return sanitize_text(text)
-

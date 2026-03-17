@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 from typing import Iterable, Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 
 def sanitize_text(text: Optional[str]) -> str:
@@ -30,3 +30,12 @@ def pick(*values: Iterable[Optional[str]]) -> Optional[str]:
 def absolutize(url: str, base: str) -> str:
     return urljoin(base, url)
 
+
+def infer_categories(url: str) -> list[str]:
+    """Best-effort category extraction from the URL path segments."""
+    parts = [p for p in urlparse(url).path.split("/") if p]
+    if "actualite" in parts:
+        idx = parts.index("actualite")
+        if idx + 1 < len(parts):
+            return [parts[idx + 1]]
+    return []

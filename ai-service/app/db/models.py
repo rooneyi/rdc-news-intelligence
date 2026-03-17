@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS articles (
     source_id TEXT,
     link TEXT UNIQUE,
     hash TEXT UNIQUE,
+    categories TEXT[] DEFAULT '{}',
+    image TEXT,
     embedding VECTOR(384),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -32,7 +34,8 @@ MIGRATE_TABLE_SQL = '''
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS source_id TEXT;
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS link TEXT;
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS hash TEXT;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS categories TEXT[] DEFAULT '{}';
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS image TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS articles_link_idx ON articles(link) WHERE link IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS articles_hash_idx ON articles(hash) WHERE hash IS NOT NULL;
 '''
-
