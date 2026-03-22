@@ -24,6 +24,8 @@ def reset_database() -> None:
     conn = get_db_connection()
     cur = conn.cursor()
     try:
+        logger.info("Dropping table training_runs (if exists)…")
+        cur.execute("DROP TABLE IF EXISTS training_runs;")
         logger.info("Dropping table articles (if exists)…")
         cur.execute("DROP TABLE IF EXISTS articles;")
 
@@ -54,4 +56,3 @@ if __name__ == "__main__":
     reset_database()
     clear_crawler_data()
     logger.info("Reset done. You can rerun the crawler from a clean state.")
-

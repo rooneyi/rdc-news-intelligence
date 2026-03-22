@@ -27,6 +27,21 @@ CREATE TABLE IF NOT EXISTS articles (
 CREATE INDEX IF NOT EXISTS articles_embedding_idx 
 ON articles USING ivfflat (embedding vector_cosine_ops) 
 WITH (lists = 100);
+
+CREATE TABLE IF NOT EXISTS training_runs (
+    id SERIAL PRIMARY KEY,
+    started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_at TIMESTAMP,
+    status TEXT DEFAULT 'running',
+    model_name TEXT,
+    processed_count INTEGER DEFAULT 0,
+    reembedded_count INTEGER DEFAULT 0,
+    note TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS training_runs_started_idx ON training_runs(started_at);
+CREATE INDEX IF NOT EXISTS training_runs_status_idx ON training_runs(status);
 '''
 
 # Migration SQL pour ajouter les colonnes si la table existe déjà
@@ -38,4 +53,17 @@ ALTER TABLE articles ADD COLUMN IF NOT EXISTS categories TEXT[] DEFAULT '{}';
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS image TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS articles_link_idx ON articles(link) WHERE link IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS articles_hash_idx ON articles(hash) WHERE hash IS NOT NULL;
+CREATE TABLE IF NOT EXISTS training_runs (
+    id SERIAL PRIMARY KEY,
+    started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_at TIMESTAMP,
+    status TEXT DEFAULT 'running',
+    model_name TEXT,
+    processed_count INTEGER DEFAULT 0,
+    reembedded_count INTEGER DEFAULT 0,
+    note TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS training_runs_started_idx ON training_runs(started_at);
+CREATE INDEX IF NOT EXISTS training_runs_status_idx ON training_runs(status);
 '''

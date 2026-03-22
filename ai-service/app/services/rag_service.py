@@ -1,7 +1,9 @@
 import logging
 import re
+import os
 from app.services.embedding_service import EmbeddingService
 from app.services.retrieval_service import RetrievalService
+from app.services.llm_service import LLMService
 from app.schemas.article import ArticleOut
 
 logger = logging.getLogger(__name__)
@@ -16,6 +18,8 @@ class RAGService:
     def __init__(self):
         self.embedding_service = EmbeddingService()
         self.retrieval_service = RetrievalService()
+        self.use_llm = os.getenv("USE_LLM_RAG", "true").lower() == "true"
+        self.llm_service = LLMService()
 
     def generate_answer(self, query: str, top_k: int = 5) -> dict:
         """
@@ -45,7 +49,13 @@ class RAGService:
                 }
 
             # 3. Générer le résumé basé sur les articles
-            summary = self._generate_summary(query, articles)
+            if self.use_llm:
+                try:
+                    summary = self.llm_service.summarize(query, articles)
+                except Exception:
+                    summary = self._generate_summary(query, articles)
+            else:
+                summary = self._generate_summary(query, articles)
 
             # 4. Formater les sources
             sources = self._format_sources(articles)

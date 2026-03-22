@@ -18,13 +18,21 @@ class EmbeddingService:
     def __init__(self, model_name: str = None):
         """Initialiser avec lazy loading du modèle"""
         self.model_name = model_name or self.DEFAULT_MODEL
-        self._model = None
+        self.cache_folder = "models_cache"
 
     def _load_model(self):
         """Charger le modèle une seule fois (cache global)"""
         if self.model_name not in self._models_cache:
             logger.info(f"Loading embedding model: {self.model_name}")
-            self._models_cache[self.model_name] = SentenceTransformer(self.model_name)
+            try:
+                model = SentenceTransformer(self.model_name, cache_folder=self.cache_folder)
+            except Exception:
+                model = SentenceTransformer(
+                    self.model_name,
+                    cache_folder=self.cache_folder,
+                    local_files_only=True,
+                )
+            self._models_cache[self.model_name] = model
         return self._models_cache[self.model_name]
 
     def generate(self, text: str) -> list:

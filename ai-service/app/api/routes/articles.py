@@ -1,4 +1,8 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+import json
+import anyio
 from app.services.article_service import create_article, search_similar, save_crawled_article
 from app.services.embedding_service import EmbeddingService
 from app.services.rag_service import RAGService
@@ -74,6 +78,31 @@ def rag_query(payload: RAGRequest):
     """RAG : génère un résumé + sources pertinentes pour une requête."""
     result = rag_service.generate_answer(payload.query, payload.top_k)
     return RAGResponse(**result)
+
+@router.post("/rag/stream", summary="RAG streaming (JSONL)", tags=["RAG"])
+async def rag_query_stream(payload: RAGRequest):
+    """RAG en streaming: renvoie des chunks JSONL (summary_chunk, done)."""
+
+    async def event_stream():
+        # Exécuter le RAG côté thread pour ne pas bloquer l'event loop
+        result = await anyio.to_thread.run_sync(rag_service.generate_answer, payload.query, payload.top_k)
+
+        # 1) envoyer les sources
+        chunk_sources = {"type": "sources", "sources": result.get("sources", []), "num_sources": result.get("num_sources", 0)}
+        yield json.dumps(chunk_sources) + "\n"
+
+        # 2) envoyer le résumé par phrases
+        summary = result.get("summary") or ""
+        parts = [p.strip() for p in summary.split(".") if p.strip()]
+        if not parts:
+            parts = [summary]
+        for part in parts:
+            yield json.dumps({"type": "summary_chunk", "text": part}) + "\n"
+
+        # 3) marqueur de fin
+        yield json.dumps({"type": "done", "query": result.get("query", payload.query)}) + "\n"
+
+    return StreamingResponse(event_stream(), media_type="application/json")
 
 
 # ── Admin ────────────────────────────────────────────────────────────────────

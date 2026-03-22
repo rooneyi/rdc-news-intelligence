@@ -40,7 +40,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE, set
     query = text if not categories else f"{text}\nCategories: {', '.join(categories)}"
 
     try:
-        data = await backend.answer(query)
+        # Utilise le streaming pour limiter les timeouts
+        data = await backend.answer_stream(query)
         reply = _build_reply(data)
     except Exception as exc:  # noqa: BLE001
         reply = "Erreur lors de la génération de la réponse."

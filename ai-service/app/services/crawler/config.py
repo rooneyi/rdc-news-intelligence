@@ -2,6 +2,17 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from dotenv import load_dotenv
+from pathlib import Path
+
+
+# Ensure env variables are loaded when running crawler CLI directly
+_project_root = Path(__file__).resolve().parents[3]
+_env_path = _project_root / ".env_file"
+if _env_path.exists():
+    load_dotenv(dotenv_path=_env_path)
+else:
+    load_dotenv(dotenv_path=_project_root / ".env")
 
 
 @dataclass
@@ -27,4 +38,3 @@ class CrawlerSettings:
 def load_crawler_settings() -> CrawlerSettings:
     """Build crawler settings from environment variables."""
     return CrawlerSettings()
-
