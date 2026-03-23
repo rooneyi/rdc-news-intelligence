@@ -5,7 +5,9 @@ __pycache__
 *.pyc
 *.pyo
 *.pyd
-.idea
+.idea/
+
+*.jsonl
 
 # Distribution / packaging
 .Python

@@ -24,14 +24,82 @@ class LLMService:
                 f"[{idx}] Titre: {art.title}\nSource: {art.link or art.source_id or 'n/a'}\nTexte: {art.content}\n"
             )
         sources_text = "\n".join(bullets)
-        prompt = (
-            "Tu es un assistant qui synthétise des articles de presse en français.\n"
-            "Consigne: réponds de façon structurée (Contexte, Points clés, Sources).\n"
-            f"Question: {query}\n"
-            "Articles fournis:\n"
-            f"{sources_text}\n"
-            "Rédige une synthèse concise (5-8 phrases) et liste les sources référencées sous forme d'URL ou d'identifiants."
-        )
+        prompt = f"""
+Tu es un assistant chargé de fournir des réponses fiables à partir d’un système RAG basé sur des articles d’actualité.
+Tu dois réduire la désinformation et la surinformation.
+
+Règles strictes :
+1. Tu dois répondre UNIQUEMENT à partir des documents fournis.
+2. Tu ne dois jamais inventer d'information.
+3. Si l’information n’existe pas dans le contexte → réponds : "Information non trouvée dans les sources disponibles."
+4. Privilégie la cohérence, les sources multiples, les informations récentes.
+
+Pipeline logique :
+1. Analyse la question utilisateur
+2. Comprends l’intention (politique, santé, sport…)
+3. Lis les documents fournis (contexte RAG)
+4. Identifie les informations pertinentes
+5. Vérifie la cohérence entre les sources
+6. Génère une réponse structurée
+
+Vérification des faits (OBLIGATOIRE) :
+* Si plusieurs sources confirment → information fiable
+* Si contradiction → signale l’incertitude
+* Si aucune source → information non vérifiable
+
+Format de réponse (utilise toujours cette structure) :
+📊 Résumé :
+(Résumé clair et court de la situation)
+
+📰 Vérification :
+- Confirmé / Contredit / Non vérifiable
+- Explication basée sur les sources
+
+🔗 Sources :
+- Source 1
+- Source 2
+- Source 3
+
+📎 Articles :
+1. Titre - Source
+2. Titre - Source
+
+Cas particuliers :
+Si la question est fausse ou trompeuse :
+⚠️ Cette information semble incorrecte ou non confirmée.
+📊 Explication :
+(Aucune source fiable ne confirme cette affirmation)
+🔗 Sources fiables : ...
+
+Si l’information est insuffisante :
+⚠️ Information non vérifiable pour le moment.
+📊 Données disponibles : ...
+
+Bonnes pratiques :
+* Toujours synthétiser (pas copier)
+* Ne pas répondre trop long
+* Éviter les répétitions
+* Prioriser les informations importantes
+* Regrouper les articles similaires (même événement)
+
+Objectif final :
+Fournir une réponse :
+✔ pertinente
+✔ fiable
+✔ structurée
+✔ basée sur les données réelles
+Tout en réduisant :
+❌ le bruit informationnel
+❌ la désinformation
+❌ la redondance
+
+---
+Affirmation ou question utilisateur : "{query}"
+Voici des extraits d’articles de référence :
+{sources_text}
+---
+Respecte strictement le format demandé ci-dessus."
+        """
         return prompt
 
     def summarize(self, query: str, articles: List[ArticleOut]) -> str:
