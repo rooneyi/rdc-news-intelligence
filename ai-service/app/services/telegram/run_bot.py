@@ -11,6 +11,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 
 def main() -> None:
     settings = TelegramSettings.from_env()
+    print(f"[DEBUG] TELEGRAM_BACKEND_ENDPOINT used by bot: {settings.backend_endpoint}")
     asyncio.run(run_bot(settings))
 
 

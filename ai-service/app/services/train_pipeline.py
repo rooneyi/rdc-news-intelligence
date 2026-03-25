@@ -44,6 +44,7 @@ def run_reembedding(batch_size: int = 50, force_all: bool = False, model_name: O
     """Re-embed les articles nouveaux (ou tous si force_all) et rafraîchit l'index vectoriel."""
     conn = get_db_connection()
     cur = conn.cursor()
+    
     model_to_use = model_name or EmbeddingService.DATASET_MODEL
     run_id = _start_run(cur, model_to_use, "re-embedding")
     conn.commit()
@@ -51,42 +52,53 @@ def run_reembedding(batch_size: int = 50, force_all: bool = False, model_name: O
     processed = 0
     reembedded = 0
     try:
+        # 1. On récupère d'abord TOUS les IDs et contenus
         cutoff = None if force_all else _get_last_success_timestamp(cur)
         if cutoff:
-            cur.execute(
-                "SELECT id, content FROM articles WHERE created_at > %s ORDER BY id",
-                (cutoff,),
-            )
+            cur.execute("SELECT id, content FROM articles WHERE created_at > %s", (cutoff,))
         else:
-            cur.execute("SELECT id, content FROM articles ORDER BY id")
+            cur.execute("SELECT id, content FROM articles")
+        
+        all_articles = cur.fetchall()
+        total_to_process = len(all_articles)
+        logger.info(f"Found {total_to_process} articles to re-embed")
 
         embedder = EmbeddingService(model_name=model_to_use)
 
-        while True:
-            rows = cur.fetchmany(batch_size)
-            if not rows:
-                break
-            for article_id, content in rows:
-                processed += 1
+        # 2. On traite les articles
+        for article_id, content in all_articles:
+            processed += 1
+            try:
                 embedding = embedder.generate(content)
                 cur.execute(
                     "UPDATE articles SET embedding = %s WHERE id = %s",
                     (embedding, article_id),
                 )
                 reembedded += 1
-            conn.commit()
+            except Exception as e:
+                logger.error(f"Failed to embed article {article_id}: {e}")
+            
+            if processed % batch_size == 0:
+                conn.commit()
+                logger.info(f"Progress: {processed}/{total_to_process} articles processed...")
+
+        # Final commit pour les articles restants
+        conn.commit()
 
         try:
-            cur.execute("REINDEX INDEX IF EXISTS articles_embedding_idx;")
+            logger.info("Refreshing vector index...")
+            # Syntaxe plus robuste pour REINDEX
+            cur.execute("REINDEX INDEX articles_embedding_idx;")
             conn.commit()
-        except Exception as reindex_err:  # noqa: BLE001
-            logger.warning("Reindex pgvector failed: %s", reindex_err)
+        except Exception as reindex_err:
+            conn.rollback() # On rollback uniquement l'erreur de reindex
+            logger.warning("Reindex pgvector failed (normal if index doesn't exist yet): %s", reindex_err)
 
         _finish_run(cur, run_id, processed, reembedded, "success", None)
         conn.commit()
         logger.info("Re-embedding terminé: processed=%s reembedded=%s", processed, reembedded)
         return {"processed": processed, "reembedded": reembedded, "run_id": run_id}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         conn.rollback()
         _finish_run(cur, run_id, processed, reembedded, "failed", str(exc))
         conn.commit()
@@ -98,7 +110,6 @@ def run_reembedding(batch_size: int = 50, force_all: bool = False, model_name: O
 
 
 def run_finetune_stub(note: str | None = None) -> dict:
-    """Placeholder pour du fine-tuning LLM. Loggue un run 'skipped'."""
     conn = get_db_connection()
     cur = conn.cursor()
     run_id = _start_run(cur, "fine-tune-placeholder", note or "fine-tune not implemented")
@@ -106,6 +117,4 @@ def run_finetune_stub(note: str | None = None) -> dict:
     conn.commit()
     cur.close()
     conn.close()
-    logger.info("Fine-tuning placeholder enregistré (run_id=%s)", run_id)
     return {"run_id": run_id, "status": "skipped"}
-

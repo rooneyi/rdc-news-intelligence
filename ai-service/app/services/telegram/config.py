@@ -27,7 +27,7 @@ class TelegramSettings:
     token: str
     backend_endpoint: str
     allowed_chat_ids: List[int]
-    top_k: int = 3
+    top_k: int = 2
     model_name: str = "orca-mini"
     use_rag: bool = True
     polling: bool = True

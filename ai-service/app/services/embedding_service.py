@@ -7,10 +7,10 @@ logger = logging.getLogger(__name__)
 class EmbeddingService:
     """Service pour générer les embeddings avec lazy loading du modèle"""
 
-    # Modèle par défaut pour les requêtes
+    # Modèle multilingue recommandé pour le contenu en Français (RDC)
+    # Dimension 384, compatible avec ta colonne VECTOR(384)
     DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-    # Modèle pour le dataset (utilisé dans load_dataset.py)
-    DATASET_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+    DATASET_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
     # Cache des modèles chargés {model_name: model_instance}
     _models_cache = {}

@@ -1,8 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException
-from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 import json
-import anyio
+import logging
 from app.services.article_service import create_article, search_similar, save_crawled_article
 from app.services.embedding_service import EmbeddingService
 from app.services.rag_service import RAGService
@@ -14,7 +13,7 @@ from typing import Optional, List
 import os
 
 router = APIRouter()
-
+logger = logging.getLogger(__name__)
 
 # ── Articles manuels ────────────────────────────────────────────────────────
 
@@ -33,7 +32,6 @@ async def post_article(article: ArticleCreate):
 def ingest_crawled_article(article: CrawlerArticle):
     """
     Reçoit un article crawlé, génère son embedding et le sauvegarde en DB.
-    Ignore les doublons (même link ou même hash).
     """
     result = save_crawled_article(article)
     if result is None:
@@ -43,9 +41,6 @@ def ingest_crawled_article(article: CrawlerArticle):
 
 @router.post("/crawler/articles/batch", summary="Ingest batch of crawled articles", tags=["Crawler"])
 def ingest_crawled_batch(articles: List[CrawlerArticle]):
-    """
-    Reçoit une liste d'articles crawlés et les insère en DB (ignore les doublons).
-    """
     saved, skipped = 0, 0
     for article in articles:
         result = save_crawled_article(article)
@@ -73,36 +68,39 @@ def query_articles(payload: QueryRequest):
     return {"results": [r.model_dump() if hasattr(r, "model_dump") else r.dict() for r in results]}
 
 
-@router.post("/rag", response_model=RAGResponse, summary="RAG - Generate Summary with Sources", tags=["RAG"])
-def rag_query(payload: RAGRequest):
-    """RAG : génère un résumé + sources pertinentes pour une requête."""
-    result = rag_service.generate_answer(payload.query, payload.top_k)
-    return RAGResponse(**result)
+@router.post("/rag", response_model=RAGResponse, summary="RAG classique", tags=["RAG"])
+async def rag_query(payload: RAGRequest):
+    """Version non-streaming : réponse complète via le pipeline RAG"""
+    result = rag_service.generate_answer_stream(payload.query, payload.top_k)
+    summary = ""
+    sources = []
+    async for chunk in result:
+        if chunk.get("type") == "summary_chunk":
+            summary += chunk.get("text", "")
+        elif chunk.get("type") == "sources":
+            sources = chunk.get("sources", [])
+    return {"summary": summary or "Mistral n'a pas pu générer de réponse.", "sources": sources, "query": payload.query}
 
-@router.post("/rag/stream", summary="RAG streaming (JSONL)", tags=["RAG"])
+@router.post("/rag/stream", summary="RAG streaming réel", tags=["RAG"])
 async def rag_query_stream(payload: RAGRequest):
-    """RAG en streaming: renvoie des chunks JSONL (summary_chunk, done)."""
+    """
+    RAG avec streaming mot-à-mot. 
+    C'est ici que la magie de Mistral opère en temps réel.
+    """
+    async def event_generator():
+        try:
+            first = True
+            async for chunk in rag_service.generate_answer_stream(payload.query, payload.top_k):
+                yield json.dumps(chunk) + "\n"
+                if first:
+                    import sys
+                    sys.stdout.flush()
+                    first = False
+        except Exception as e:
+            logger.error(f"Streaming route error: {e}")
+            yield json.dumps({"type": "error", "message": str(e)}) + "\n"
 
-    async def event_stream():
-        # Exécuter le RAG côté thread pour ne pas bloquer l'event loop
-        result = await anyio.to_thread.run_sync(rag_service.generate_answer, payload.query, payload.top_k)
-
-        # 1) envoyer les sources
-        chunk_sources = {"type": "sources", "sources": result.get("sources", []), "num_sources": result.get("num_sources", 0)}
-        yield json.dumps(chunk_sources) + "\n"
-
-        # 2) envoyer le résumé par phrases
-        summary = result.get("summary") or ""
-        parts = [p.strip() for p in summary.split(".") if p.strip()]
-        if not parts:
-            parts = [summary]
-        for part in parts:
-            yield json.dumps({"type": "summary_chunk", "text": part}) + "\n"
-
-        # 3) marqueur de fin
-        yield json.dumps({"type": "done", "query": result.get("query", payload.query)}) + "\n"
-
-    return StreamingResponse(event_stream(), media_type="application/json")
+    return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
 
 # ── Admin ────────────────────────────────────────────────────────────────────
@@ -113,13 +111,14 @@ class LoadRequest(BaseModel):
 
 @router.post("/admin/load", summary="Trigger dataset load (admin)", tags=["Admin"])
 def admin_trigger_load(payload: LoadRequest, background_tasks: BackgroundTasks):
-    """Déclenche le chargement du dataset HuggingFace en arrière-plan."""
     if not (os.getenv("DATABASE_URL") or os.getenv("DB_URL") or os.getenv("DB_HOST")):
         raise HTTPException(status_code=400, detail="Database credentials not found in environment.")
+
     background_tasks.add_task(
-        load_and_insert, None,
+        load_and_insert,
+        None,
         "bernard-ng/drc-news-corpus",
-        "sentence-transformers/all-MiniLM-L6-v2",
+        EmbeddingService.DEFAULT_MODEL,
         payload.limit
     )
     return {"status": "scheduled"}

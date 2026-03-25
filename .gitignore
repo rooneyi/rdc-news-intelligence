@@ -1,3 +1,33 @@
+# Ignorer l'environnement virtuel Python
+.env/
+env/
+venv/
+ENV/
+__pycache__/
+
+# Ignorer les fichiers/dossiers du crawler
+ai-service/data/crawler/
+ai-service/data/**/*.jsonl
+ai-service/data/**/*.html
+ai-service/data/**/*.xml
+ai-service/data/**/*.csv
+ai-service/data/**/*.xlsx
+
+# Fichiers de configuration sensibles
+ai-service/.env
+ai-service/.env_file
+
+# Fichiers temporaires, logs, outputs
+*.log
+*.tmp
+*.bak
+*.swp
+*.sqlite3
+*.db
+
+# Fichiers système
+.DS_Store
+Thumbs.db
 .env
 ./env
 .venv

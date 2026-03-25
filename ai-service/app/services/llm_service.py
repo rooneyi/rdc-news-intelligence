@@ -1,124 +1,75 @@
 import os
 import httpx
 import logging
-from typing import List
+import json
+from typing import List, AsyncGenerator
 from app.schemas.article import ArticleOut
 
 logger = logging.getLogger(__name__)
 
 
 class LLMService:
-    """Client simple pour un LLM exposé via Ollama (HTTP /api/generate)."""
+    """Client pour Mistral via Ollama optimisé pour la RDC."""
 
     def __init__(self, model: str | None = None, host: str | None = None, timeout: int | None = None):
         self.model = model or os.getenv("OLLAMA_MODEL", "mistral")
         self.host = host or os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
-        # Timeout plus court par défaut pour éviter les blocages avant fallback
-        env_timeout = os.getenv("OLLAMA_TIMEOUT")
-        self.timeout = timeout or (int(env_timeout) if env_timeout else 20)
+        # On met un timeout très large (5 min) pour éviter les erreurs de chargement du modèle
+        self.timeout = timeout or 300 
 
     def _build_prompt(self, query: str, articles: List[ArticleOut]) -> str:
-        bullets = []
-        for idx, art in enumerate(articles[:5], 1):
-            bullets.append(
-                f"[{idx}] Titre: {art.title}\nSource: {art.link or art.source_id or 'n/a'}\nTexte: {art.content}\n"
-            )
-        sources_text = "\n".join(bullets)
-        prompt = f"""
-Tu es un assistant chargé de fournir des réponses fiables à partir d’un système RAG basé sur des articles d’actualité.
-Tu dois réduire la désinformation et la surinformation.
+        context = "\n".join([f"[{i+1}] {a.title}: {a.content[:500]}" for i, a in enumerate(articles)])
+        return f"""[INST] Tu es un expert en actualité de la RDC. Réponds à la question en utilisant UNIQUEMENT les articles fournis.
+Si tu ne sais pas, dis-le. Ne crée pas de fausses informations.
 
-Règles strictes :
-1. Tu dois répondre UNIQUEMENT à partir des documents fournis.
-2. Tu ne dois jamais inventer d'information.
-3. Si l’information n’existe pas dans le contexte → réponds : "Information non trouvée dans les sources disponibles."
-4. Privilégie la cohérence, les sources multiples, les informations récentes.
+Format :
+📊 RÉSUMÉ : (Bref et percutant)
+📰 VÉRIFICATION : (Analyse de fiabilité)
+🔗 SOURCES : (Titres des articles)
 
-Pipeline logique :
-1. Analyse la question utilisateur
-2. Comprends l’intention (politique, santé, sport…)
-3. Lis les documents fournis (contexte RAG)
-4. Identifie les informations pertinentes
-5. Vérifie la cohérence entre les sources
-6. Génère une réponse structurée
+Question : {query}
+Articles :
+{context}
+[/INST]"""
 
-Vérification des faits (OBLIGATOIRE) :
-* Si plusieurs sources confirment → information fiable
-* Si contradiction → signale l’incertitude
-* Si aucune source → information non vérifiable
-
-Format de réponse (utilise toujours cette structure) :
-📊 Résumé :
-(Résumé clair et court de la situation)
-
-📰 Vérification :
-- Confirmé / Contredit / Non vérifiable
-- Explication basée sur les sources
-
-🔗 Sources :
-- Source 1
-- Source 2
-- Source 3
-
-📎 Articles :
-1. Titre - Source
-2. Titre - Source
-
-Cas particuliers :
-Si la question est fausse ou trompeuse :
-⚠️ Cette information semble incorrecte ou non confirmée.
-📊 Explication :
-(Aucune source fiable ne confirme cette affirmation)
-🔗 Sources fiables : ...
-
-Si l’information est insuffisante :
-⚠️ Information non vérifiable pour le moment.
-📊 Données disponibles : ...
-
-Bonnes pratiques :
-* Toujours synthétiser (pas copier)
-* Ne pas répondre trop long
-* Éviter les répétitions
-* Prioriser les informations importantes
-* Regrouper les articles similaires (même événement)
-
-Objectif final :
-Fournir une réponse :
-✔ pertinente
-✔ fiable
-✔ structurée
-✔ basée sur les données réelles
-Tout en réduisant :
-❌ le bruit informationnel
-❌ la désinformation
-❌ la redondance
-
----
-Affirmation ou question utilisateur : "{query}"
-Voici des extraits d’articles de référence :
-{sources_text}
----
-Respecte strictement le format demandé ci-dessus."
-        """
-        return prompt
-
-    def summarize(self, query: str, articles: List[ArticleOut]) -> str:
+    async def summarize_stream(self, query: str, articles: List[ArticleOut]) -> AsyncGenerator[str, None]:
+        """Génération en streaming réel : les mots s'affichent dès qu'ils sortent de Mistral."""
+        logger.info(f"[LLMService] Appel à Mistral/Ollama pour la question : {query}")
         if not articles:
-            return "Aucun article fourni."
+            yield "Désolé, aucune source trouvée pour répondre à cette question."
+            return
 
         prompt = self._build_prompt(query, articles)
         url = f"{self.host}/api/generate"
+        
         try:
-            logger.info("Calling LLM model=%s host=%s", self.model, self.host)
-            resp = httpx.post(
-                url,
-                json={"model": self.model, "prompt": prompt, "stream": False},
-                timeout=self.timeout,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("response") or data.get("text") or ""
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("LLM call failed: %s", exc)
-            raise
+            # Utilisation d'un client avec timeout désactivé pour la lecture du stream
+            async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout, read=None)) as client:
+                async with client.stream(
+                    "POST", 
+                    url, 
+                    json={"model": self.model, "prompt": prompt, "stream": True},
+                ) as response:
+                    if response.status_code != 200:
+                        yield f"Erreur Ollama ({response.status_code})"
+                        return
 
+                    async for line in response.aiter_lines():
+                        if not line: continue
+                        try:
+                            data = json.loads(line)
+                            chunk = data.get("response", "")
+                            if chunk:
+                                yield chunk
+                            if data.get("done"):
+                                break
+                        except json.JSONDecodeError:
+                            continue
+                            
+        except Exception as e:
+            logger.error(f"Ollama connection error: {e}")
+            yield f"\n[Erreur de connexion avec Mistral : {str(e)}]"
+
+    def summarize(self, query: str, articles: List[ArticleOut]) -> str:
+        """Méthode de secours (évite le crash si appelée par erreur)"""
+        return "Erreur: Utilisez la méthode asynchrone summarize_stream pour Mistral."
