@@ -50,6 +50,18 @@ class RAGService:
             logger.error(f"Erreur critique dans le flux RAG: {e}")
             yield {"type": "error", "message": f"Désolé, Mistral est trop sollicité : {str(e)}"}
 
-    def generate_answer(self, query: str, top_k: int = 5) -> dict:
-        """Méthode de secours pour éviter que le code ne plante si appelé de force"""
-        return {"summary": "⚠️ Mode dégradé : Veuillez utiliser /rag/stream pour une réponse complète."}
+    async def generate_full_answer(self, query: str, top_k: int = 5, channel: str = "web") -> str:
+        """Génère une réponse RAG complète en un seul bloc (pour les Webhooks)."""
+        try:
+            query_embedding = self.embedding_service.generate(query)
+            articles = self.retrieval_service.search(query_embedding, limit=top_k)
+            
+            if not articles:
+                logger.info("[RAGService] Aucun article trouvé. Message générique retourné.")
+                return f"❌ VÉRIFICATION : NON VÉRIFIABLE\n📝 EXPLICATION : Je n'ai trouvé aucune source locale (RDC News) concernant '{query}'."
+            
+            return await self.llm_service.summarize_full(query, articles, channel=channel)
+            
+        except Exception as e:
+            logger.error(f"Erreur critique dans le flux complet RAG: {e}")
+            return f"⚠️ Une erreur interne est survenue lors de l'analyse (Mistral indisponible : {str(e)})"

@@ -17,29 +17,40 @@ class LLMService:
         # On met un timeout très large (5 min) pour éviter les erreurs de chargement du modèle
         self.timeout = timeout or 300 
 
-    def _build_prompt(self, query: str, articles: List[ArticleOut]) -> str:
-        context = "\n".join([f"[{i+1}] {a.title}: {a.content[:500]}" for i, a in enumerate(articles)])
-        return f"""[INST] Tu es un expert en actualité de la RDC. Réponds à la question en utilisant UNIQUEMENT les articles fournis.
-Si tu ne sais pas, dis-le. Ne crée pas de fausses informations.
-
-Format :
+    def _build_prompt(self, query: str, articles: List[ArticleOut], channel: str = "web") -> str:
+        context = "\n".join([f"[{i+1}] {a.title}: {a.content[:500]} (Lien: {a.link})" for i, a in enumerate(articles)])
+        
+        format_instruction = ""
+        if channel in ["whatsapp", "telegram"]:
+            format_instruction = f"""Réponds au format court adapté pour messagerie ({channel}). Utilise des emojis.
+Format strict :
+🚨 VÉRIFICATION : (Commence par dire clairement si c'est VRAI, FAUX, IMPRÉCIS, ou NON VÉRIFIABLE)
+📝 EXPLICATION : (Explication très courte et claire sur les faits)
+🔗 SOURCES : (Donne les titres et les liens des sources fiables)"""
+        else:
+            format_instruction = """Format :
 📊 RÉSUMÉ : (Bref et percutant)
-📰 VÉRIFICATION : (Analyse de fiabilité)
-🔗 SOURCES : (Titres des articles)
+📰 VÉRIFICATION : (Indique si l'information est confirmée, fausse ou nuancée)
+🔗 SOURCES : (Titres des articles)"""
 
-Question : {query}
-Articles :
+        return f"""[INST] Tu es un expert fact-checker journaliste en RDC. Réponds à la question ou vérifie l'information en utilisant UNIQUEMENT les articles fournis.
+Si l'information n'est pas dans les articles, dis que tu ne peux pas vérifier. Ne crée aucune fausse information.
+
+{format_instruction}
+
+Information à vérifier : {query}
+Articles de référence :
 {context}
 [/INST]"""
 
-    async def summarize_stream(self, query: str, articles: List[ArticleOut]) -> AsyncGenerator[str, None]:
+    async def summarize_stream(self, query: str, articles: List[ArticleOut], channel: str = "web") -> AsyncGenerator[str, None]:
         """Génération en streaming réel : les mots s'affichent dès qu'ils sortent de Mistral."""
         logger.info(f"[LLMService] Appel à Mistral/Ollama pour la question : {query}")
         if not articles:
             yield "Désolé, aucune source trouvée pour répondre à cette question."
             return
 
-        prompt = self._build_prompt(query, articles)
+        prompt = self._build_prompt(query, articles, channel)
         url = f"{self.host}/api/generate"
         
         try:
@@ -70,6 +81,13 @@ Articles :
             logger.error(f"Ollama connection error: {e}")
             yield f"\n[Erreur de connexion avec Mistral : {str(e)}]"
 
+    async def summarize_full(self, query: str, articles: List[ArticleOut], channel: str = "web") -> str:
+        """Gère la réponse complète sans streaming (utile pour les Webhooks WhatsApp/Telegram)."""
+        response_text = ""
+        async for chunk in self.summarize_stream(query, articles, channel):
+            response_text += chunk
+        return response_text
+
     def summarize(self, query: str, articles: List[ArticleOut]) -> str:
         """Méthode de secours (évite le crash si appelée par erreur)"""
-        return "Erreur: Utilisez la méthode asynchrone summarize_stream pour Mistral."
+        return "Erreur: Utilisez la méthode asynchrone summarize_stream ou summarize_full pour Mistral."
