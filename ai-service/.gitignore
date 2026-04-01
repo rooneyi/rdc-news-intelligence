@@ -62,4 +62,5 @@ Thumbs.db
 # Crawler Data
 data/crawler/*.jsonl
 data/crawler/*.json
+!data/crawler/sources.json
 
