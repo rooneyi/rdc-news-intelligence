@@ -14,18 +14,38 @@ async def process_telegram_message(chat_id: str, query: str):
         logger.error("TELEGRAM_BOT_TOKEN manquant")
         return
         
-    rag_service = RAGService()
-    # Utilisation du canal telegram pour avoir un prompt court (vrai/faux)
-    response_text = await rag_service.generate_full_answer(query, channel="telegram")
+    # 1. Envoi du message d'attente (comme dans votre ancien script)
+    url_send = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload_start = {"chat_id": chat_id, "text": "🔎 Recherche d'informations en cours..."}
     
-    # Envoi de la réponse à Telegram
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": response_text}
+    message_id = None
     try:
         async with httpx.AsyncClient() as client:
-            await client.post(url, json=payload)
+            resp = await client.post(url_send, json=payload_start)
+            data = resp.json()
+            if data.get("ok"):
+                message_id = data["result"]["message_id"]
     except Exception as e:
-        logger.error(f"Erreur envoi Telegram: {e}")
+        logger.error(f"Erreur envoi initial Telegram: {e}")
+        return
+
+    # 2. Traitement RAG IA
+    rag_service = RAGService()
+    response_text = await rag_service.generate_full_answer(query, channel="telegram")
+    
+    # 3. Édition du message d'attente avec la réponse finale
+    if message_id:
+        url_edit = f"https://api.telegram.org/bot{bot_token}/editMessageText"
+        payload_edit = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": response_text
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.post(url_edit, json=payload_edit)
+        except Exception as e:
+            logger.error(f"Erreur édition message Telegram: {e}")
 
 async def process_whatsapp_message(phone_number: str, query: str):
     whatsapp_token = os.getenv("WHATSAPP_TOKEN")
