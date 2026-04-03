@@ -36,6 +36,10 @@ ai-service/data/**/*.xml
 ai-service/data/**/*.csv
 ai-service/data/**/*.xlsx
 
+# Ignore all crawl data except the source file
+ai-service/data/crawler/*
+!ai-service/data/crawler/source.json
+
 # Fichiers de configuration sensibles
 ai-service/.env
 ai-service/.env_file
