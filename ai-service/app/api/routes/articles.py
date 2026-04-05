@@ -1,10 +1,11 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 import json
 import logging
 from app.services.article_service import create_article, search_similar, save_crawled_article
 from app.services.embedding_service import EmbeddingService
 from app.services.rag_service import RAGService
+from app.services.ocr_service import OCRService
 from app.services.load_dataset import load_and_insert
 from app.schemas.article import ArticleCreate, ArticleOut, RAGRequest, RAGResponse
 from app.services.crawler.models import Article as CrawlerArticle
@@ -58,6 +59,7 @@ class QueryRequest(BaseModel):
 
 embedding_service = EmbeddingService()
 rag_service = RAGService()
+ocr_service = OCRService()
 
 
 @router.post("/query", summary="Search Similar Articles", tags=["Articles"])
@@ -80,6 +82,38 @@ async def rag_query(payload: RAGRequest):
         elif chunk.get("type") == "sources":
             sources = chunk.get("sources", [])
     return {"summary": summary or "Mistral n'a pas pu générer de réponse.", "sources": sources, "query": payload.query}
+
+
+@router.post("/rag/image", response_model=RAGResponse, summary="RAG à partir d'une image (OCR local)", tags=["RAG"])
+async def rag_from_image(file: UploadFile = File(...)):
+    """Exécute le pipeline RAG à partir d'une image.
+
+    - Utilise un OCR local (Tesseract via pytesseract) pour extraire le texte de l'image.
+    - Passe le texte extrait au RAG existant (même logique que /rag).
+    """
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Le fichier doit être une image.")
+
+    image_bytes = await file.read()
+    text = ocr_service.extract_text(image_bytes)
+
+    if not text:
+        raise HTTPException(status_code=400, detail="Impossible d'extraire du texte depuis cette image.")
+
+    result = rag_service.generate_answer_stream(text, top_k=5)
+    summary = ""
+    sources: list = []
+    async for chunk in result:
+        if chunk.get("type") == "summary_chunk":
+            summary += chunk.get("text", "")
+        elif chunk.get("type") == "sources":
+            sources = chunk.get("sources", [])
+
+    return {
+        "summary": summary or "Mistral n'a pas pu générer de réponse.",
+        "sources": sources,
+        "query": text,
+    }
 
 @router.post("/rag/stream", summary="RAG streaming réel", tags=["RAG"])
 async def rag_query_stream(payload: RAGRequest):
