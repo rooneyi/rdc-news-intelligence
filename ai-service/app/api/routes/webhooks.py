@@ -1,11 +1,13 @@
 import logging
 from fastapi import APIRouter, Request, BackgroundTasks, HTTPException, Response
 from app.services.rag_service import RAGService
+from app.services.ocr_service import OCRService
 import httpx
 import os
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+ocr_service = OCRService()
 
 # Ce webhook traitera le message de l'utilisateur et enverra la réponse en arrière-plan
 async def process_telegram_message(chat_id: str, query: str):
@@ -113,6 +115,73 @@ async def process_whatsapp_message(phone_number: str, query: str):
     except Exception as e:
         logger.error(f"Erreur envoi WhatsApp: {e}")
 
+
+async def process_whatsapp_image(phone_number: str, media_id: str):
+    """Traite une image reçue sur WhatsApp : OCR local puis RAG texte."""
+    whatsapp_token = os.getenv("WHATSAPP_TOKEN")
+    phone_id = os.getenv("WHATSAPP_PHONE_ID")
+    if not whatsapp_token or not phone_id:
+        logger.error("Tokens WhatsApp manquants")
+        return
+
+    base_headers = {"Authorization": f"Bearer {whatsapp_token}"}
+
+    try:
+        async with httpx.AsyncClient() as client:
+            # 1. Récupérer l'URL du média
+            meta_resp = await client.get(
+                f"https://graph.facebook.com/v17.0/{media_id}", headers=base_headers
+            )
+            meta_data = meta_resp.json()
+            media_url = meta_data.get("url")
+            if not media_url:
+                logger.error("[WhatsApp] Impossible de récupérer l'URL du média: %s", meta_data)
+                return
+
+            # 2. Télécharger l'image
+            img_resp = await client.get(media_url, headers=base_headers)
+            image_bytes = img_resp.content
+
+            # 3. OCR local
+            extracted_text = ocr_service.extract_text(image_bytes)
+            if not extracted_text:
+                logger.info("[WhatsApp] Aucun texte extrait de l'image pour %s", phone_number)
+                payload = {
+                    "messaging_product": "whatsapp",
+                    "to": phone_number,
+                    "type": "text",
+                    "text": {"body": "❌ Impossible d'extraire du texte de cette image."},
+                }
+                await client.post(
+                    f"https://graph.facebook.com/v17.0/{phone_id}/messages",
+                    json=payload,
+                    headers={**base_headers, "Content-Type": "application/json"},
+                )
+                return
+
+            logger.info("[WhatsApp] Texte OCR extrait (%s): %.80s…", phone_number, extracted_text)
+
+            # 4. RAG texte complet
+            rag_service = RAGService()
+            response_text = await rag_service.generate_full_answer(
+                extracted_text, channel="whatsapp"
+            )
+
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": phone_number,
+                "type": "text",
+                "text": {"body": response_text},
+            }
+            await client.post(
+                f"https://graph.facebook.com/v17.0/{phone_id}/messages",
+                json=payload,
+                headers={**base_headers, "Content-Type": "application/json"},
+            )
+
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Erreur traitement image WhatsApp: {e}")
+
 @router.post("/telegram")
 async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     """
@@ -146,11 +215,19 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
         if "messages" in value:
             msg = value["messages"][0]
             phone_number = msg["from"]
-            if msg.get("type") == "text":
+            msg_type = msg.get("type")
+
+            if msg_type == "text":
                 text = msg["text"]["body"]
-                # Filtre anti-spam : on peut exiger que le message commence par "? " ou "!check "
-                logger.info(f"Message de WhatsApp de {phone_number} : {text}")
+                logger.info(f"Message texte WhatsApp de {phone_number} : {text}")
                 background_tasks.add_task(process_whatsapp_message, phone_number, text)
+
+            elif msg_type == "image":
+                image = msg.get("image", {})
+                media_id = image.get("id")
+                logger.info(f"Image WhatsApp reçue de {phone_number} (media_id=%s)", media_id)
+                if media_id:
+                    background_tasks.add_task(process_whatsapp_image, phone_number, media_id)
     except Exception as e:
         logger.error(f"Erreur de parsing payload WhatsApp: {e}")
         

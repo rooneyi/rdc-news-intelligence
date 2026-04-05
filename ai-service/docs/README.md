@@ -15,11 +15,13 @@ Ce service est le moteur d'intelligence artificielle du projet **RDC News Intell
 - **Pipeline de chargement** : Script automatique (`app/services/load_dataset.py`) qui télécharge, vectorise et insère les articles en base de données par lots.
 - **État actuel** : Environ **1986 articles** ont été chargés et vectorisés avec succès.
 
-### 3. API FastAPI
-- **Recherche Sémantique** : Endpoint `POST /query` permettant de poser une question en langage naturel et d'obtenir les 5 articles les plus pertinents.
+### 3. API FastAPI & RAG
+- **Recherche Sémantique** : Endpoint `POST /query` permettant de poser une question en langage naturel et d'obtenir les articles les plus pertinents.
+- **RAG classique** : `POST /rag` renvoie un résumé complet + les sources.
+- **RAG Streaming** : `POST /rag/stream` renvoie les chunks de réponse Mistral en flux (NDJSON) pour une UI temps réel.
+- **RAG Image → Texte (OCR local)** : `POST /rag/image` prend une image, applique un OCR local (Tesseract) puis envoie le texte extrait dans le pipeline RAG.
 - **Gestion des articles** : Endpoint `POST /articles` pour l'ajout manuel d'articles.
 - **Administration** : Endpoint `POST /admin/load` pour déclencher ou limiter le chargement du dataset en arrière-plan.
-- **Correction technique** : Mise en place d'un cast explicite `::vector` dans les requêtes SQL pour assurer la compatibilité avec `psycopg2`.
 
 ## 🛠 Installation et Configuration
 
@@ -70,6 +72,13 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 - Le paramètre `DISABLE_DATASET_AUTOLOAD=true` fait que le loader de dataset **ne tourne pas automatiquement** au démarrage.
 - Si `TELEGRAM_BOT_TOKEN` est défini, le polling Telegram est lancé automatiquement dans FastAPI (aucun script séparé à lancer).
+
+Variables d'environnement importantes (exemple dans `.env_file`) :
+- `TELEGRAM_BOT_TOKEN` : token du bot Telegram.
+- `TELEGRAM_TOP_K` : nombre maximum d'articles utilisés par le RAG pour Telegram.
+- `TELEGRAM_USE_RAG` : activer/désactiver l'utilisation du RAG côté bot.
+- `OCR_LANG` : langues utilisées par Tesseract pour l'OCR (par défaut `fra+eng`).
+- `ENABLE_CRON_JOBS` : si défini à `true`, active le cron crawler + re-embedding toutes les 2h.
 
 ### Tester la recherche sémantique
 Utilisez `curl` pour poser une question :
@@ -125,6 +134,9 @@ Une fois l'application lancée, la documentation Swagger est disponible sur :
        uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
        ```
     - Aucun script `run_bot` séparé n'est nécessaire.
+    - **Flux supportés côté bot Telegram :**
+      - Message texte → RAG texte (streaming Mistral) avec affichage immédiat des SOURCES LOCALES puis de la réponse.
+      - Photo contenant du texte → téléchargement de l'image, OCR local (Tesseract), puis même pipeline RAG texte.
 
 ## 🧭 Guide opérationnel (étapes)
 1. **Activer l'env & deps**
@@ -174,6 +186,16 @@ Une fois l'application lancée, la documentation Swagger est disponible sur :
 9. **Bot Telegram**
    - Utilise `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BACKEND_ENDPOINT`, `TELEGRAM_ALLOWED_CHAT_IDS`, `TELEGRAM_USE_RAG`, `TELEGRAM_TOP_K`.
    - Est démarré automatiquement avec FastAPI via le polling (`getUpdates`).
+   - Gère :
+     - Texte → RAG texte (streaming)
+     - Image → OCR local puis RAG texte
+
+10. **WhatsApp (Cloud API)**
+   - Webhook `/webhooks/whatsapp` pour recevoir les messages Meta.
+   - Variables : `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_VERIFY_TOKEN`.
+   - Gère :
+     - Texte → RAG texte (réponse complète).
+     - Image → téléchargement via l'API Graph, OCR local (Tesseract), puis RAG texte.
 
 ## 📦 Ce que fait le projet
 - **FastAPI backend** : ingestion d’articles, recherche RAG, endpoints crawler.
