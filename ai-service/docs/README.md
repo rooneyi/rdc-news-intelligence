@@ -51,15 +51,25 @@ DB_NAME=rdc_news
 DB_USER=votre_utilisateur
 DB_PASSWORD=votre_mot_de_passe
 DATABASE_URL=postgresql://user:pass@host:port/dbname
+
+# Désactive le chargement automatique du dataset HuggingFace au démarrage
+DISABLE_DATASET_AUTOLOAD=true
+
+# (Optionnel) Active le CRON automatique (crawler + re-embedding toutes les 2h)
+# Par défaut il est désactivé pour ne pas impacter la réactivité.
+# ENABLE_CRON_JOBS=true
 ```
 
 ## 📖 Utilisation
 
-### Lancer l'application
+### Lancer l'application (API + Telegram)
 ```bash
 export PYTHONPATH=$(pwd)
-python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+- Le paramètre `DISABLE_DATASET_AUTOLOAD=true` fait que le loader de dataset **ne tourne pas automatiquement** au démarrage.
+- Si `TELEGRAM_BOT_TOKEN` est défini, le polling Telegram est lancé automatiquement dans FastAPI (aucun script séparé à lancer).
 
 ### Tester la recherche sémantique
 Utilisez `curl` pour poser une question :
@@ -89,7 +99,7 @@ Une fois l'application lancée, la documentation Swagger est disponible sur :
    ```bash
    uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
    ```
-5. Lancer un crawl direct (exemple radiookapi) ou toutes les sources :
+5. Lancer un crawl direct (exemple radiookapi) ou toutes les sources (crawler HTML) :
    ```bash
    python -m app.services.crawler.scripts.sync --source-id radiookapi.net --limit 20
    # ou tout le catalogue depuis data/crawler/sources.json (env auto-chargé depuis .env_file/.env)
@@ -109,11 +119,12 @@ Une fois l'application lancée, la documentation Swagger est disponible sur :
    ```
    Ajuster `OLLAMA_MODEL` dans `.env_file` (défaut: mistral).
 8. Démarrer le bot Telegram :
-   - Renseigner `TELEGRAM_BOT_TOKEN` (et éventuellement `TELEGRAM_ALLOWED_CHAT_IDS`).
-   - Lancer :
-     ```bash
-     python -m app.services.telegram.run_bot
-     ```
+    - Renseigner `TELEGRAM_BOT_TOKEN` (et éventuellement `TELEGRAM_ALLOWED_CHAT_IDS`, `TELEGRAM_TOP_K`, `TELEGRAM_USE_RAG`).
+    - Le polling Telegram est maintenant **intégré dans FastAPI** : il démarre automatiquement avec la commande :
+       ```bash
+       uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+       ```
+    - Aucun script `run_bot` séparé n'est nécessaire.
 
 ## 🧭 Guide opérationnel (étapes)
 1. **Activer l'env & deps**
@@ -127,11 +138,11 @@ Une fois l'application lancée, la documentation Swagger est disponible sur :
    ```bash
    python -m app.maintenance.reset_all
    ```
-4. **Démarrer l'API FastAPI**
+4. **Démarrer l'API FastAPI (sans CRON automatique)**
    ```bash
    uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
    ```
-5. **Crawler**
+5. **Crawler (HTML / WordPress) — manuel**
    - Une source :
      ```bash
      python -m app.services.crawler.scripts.sync --source-id radiookapi.net --limit 20
@@ -148,7 +159,7 @@ Une fois l'application lancée, la documentation Swagger est disponible sur :
      --endpoint http://127.0.0.1:8000 \
      --batch-size 50
    ```
-7. **Ré-embedding / rafraîchir l'index pgvector**
+7. **Ré-embedding / rafraîchir l'index pgvector — manuel**
    ```bash
    python - <<'PY'
    from app.services.train_pipeline import run_reembedding
@@ -161,10 +172,8 @@ Une fois l'application lancée, la documentation Swagger est disponible sur :
    - Via API: POST `/query` avec `{ "query": "..." }`.
    - Modèle utilisé côté embeddings: `EmbeddingService` (Sentence Transformers). Génération (résumé/synthèse) : `OLLAMA_MODEL` si activé.
 9. **Bot Telegram**
-   ```bash
-   python -m app.services.telegram.run_bot
-   ```
-   Utilise `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BACKEND_ENDPOINT`, `TELEGRAM_ALLOWED_CHAT_IDS`, `TELEGRAM_USE_RAG`, `TELEGRAM_TOP_K`.
+   - Utilise `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BACKEND_ENDPOINT`, `TELEGRAM_ALLOWED_CHAT_IDS`, `TELEGRAM_USE_RAG`, `TELEGRAM_TOP_K`.
+   - Est démarré automatiquement avec FastAPI via le polling (`getUpdates`).
 
 ## 📦 Ce que fait le projet
 - **FastAPI backend** : ingestion d’articles, recherche RAG, endpoints crawler.

@@ -13,39 +13,79 @@ async def process_telegram_message(chat_id: str, query: str):
     if not bot_token:
         logger.error("TELEGRAM_BOT_TOKEN manquant")
         return
-        
-    # 1. Envoi du message d'attente (comme dans votre ancien script)
-    url_send = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload_start = {"chat_id": chat_id, "text": "🔎 Recherche d'informations en cours..."}
-    
+
+    base_url = f"https://api.telegram.org/bot{bot_token}"
+
+    # 1. Envoi du message d'attente
     message_id = None
     try:
         async with httpx.AsyncClient() as client:
-            resp = await client.post(url_send, json=payload_start)
+            resp = await client.post(
+                f"{base_url}/sendMessage",
+                json={"chat_id": chat_id, "text": "🔎 Recherche d'informations en cours..."},
+            )
             data = resp.json()
-            if data.get("ok"):
-                message_id = data["result"]["message_id"]
-    except Exception as e:
-        logger.error(f"Erreur envoi initial Telegram: {e}")
-        return
+            if not data.get("ok"):
+                logger.error(f"Erreur Telegram sendMessage: {data}")
+                return
+            message_id = data["result"]["message_id"]
 
-    # 2. Traitement RAG IA
-    rag_service = RAGService()
-    response_text = await rag_service.generate_full_answer(query, channel="telegram")
-    
-    # 3. Édition du message d'attente avec la réponse finale
-    if message_id:
-        url_edit = f"https://api.telegram.org/bot{bot_token}/editMessageText"
-        payload_edit = {
-            "chat_id": chat_id,
-            "message_id": message_id,
-            "text": response_text
-        }
-        try:
-            async with httpx.AsyncClient() as client:
-                await client.post(url_edit, json=payload_edit)
-        except Exception as e:
-            logger.error(f"Erreur édition message Telegram: {e}")
+            # 2. Traitement RAG IA en streaming
+            rag_service = RAGService()
+            text_buffer = ""
+            sources_header = ""
+
+            async for event in rag_service.generate_answer_stream(query, top_k=int(os.getenv("TELEGRAM_TOP_K", "3"))):
+                event_type = event.get("type")
+
+                if event_type == "sources":
+                    sources = event.get("sources", [])
+                    if sources:
+                        lines = []
+                        for i, s in enumerate(sources, 1):
+                            url = s.get("url") or "(lien indisponible)"
+                            title = s.get("title") or "Source locale"
+                            lines.append(f"[{i}] {title} - {url}")
+                        sources_header = "🔗 SOURCES LOCALES :\n" + "\n".join(lines) + "\n\n"
+
+                        await client.post(
+                            f"{base_url}/editMessageText",
+                            json={
+                                "chat_id": chat_id,
+                                "message_id": message_id,
+                                "text": sources_header + (text_buffer or "🕒 Génération de la réponse…"),
+                            },
+                        )
+
+                elif event_type == "summary_chunk":
+                    chunk = event.get("text", "")
+                    if not chunk:
+                        continue
+                    text_buffer += chunk
+
+                    await client.post(
+                        f"{base_url}/editMessageText",
+                        json={
+                            "chat_id": chat_id,
+                            "message_id": message_id,
+                            "text": sources_header + text_buffer,
+                        },
+                    )
+
+                elif event_type == "error":
+                    error_message = event.get("message", "Erreur interne RAG")
+                    await client.post(
+                        f"{base_url}/editMessageText",
+                        json={
+                            "chat_id": chat_id,
+                            "message_id": message_id,
+                            "text": error_message,
+                        },
+                    )
+                    break
+
+    except Exception as e:
+        logger.error(f"Erreur streaming Telegram: {e}")
 
 async def process_whatsapp_message(phone_number: str, query: str):
     whatsapp_token = os.getenv("WHATSAPP_TOKEN")

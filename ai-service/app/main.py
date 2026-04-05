@@ -16,12 +16,18 @@ app.include_router(articles_router)
 app.include_router(webhooks_router, prefix="/webhooks", tags=["Webhooks"])
 
 import asyncio
+import os
 from app.scheduler import start_cron_jobs, stop_cron_jobs
 
 @app.on_event("startup")
 async def startup_event():
-    """Démarre le CRON de crawl et finetuning RAG au démarrage du serveur."""
-    asyncio.create_task(start_cron_jobs())
+    """Démarre les tâches de fond non bloquantes au démarrage du serveur."""
+
+    # Cron (crawler + re-embedding) désactivé par défaut pour ne pas impacter
+    # la réactivité de l'app. Active-le explicitement via l'env si tu le souhaites.
+    if os.getenv("ENABLE_CRON_JOBS", "").lower() in {"1", "true", "yes"}:
+        asyncio.create_task(start_cron_jobs())
+
     # Démarre aussi le polling Telegram (getUpdates) en arrière-plan
     asyncio.create_task(run_telegram_polling())
 

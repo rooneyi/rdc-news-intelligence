@@ -53,15 +53,22 @@ class RAGService:
     async def generate_full_answer(self, query: str, top_k: int = 5, channel: str = "web") -> str:
         """Génère une réponse RAG complète en un seul bloc (pour les Webhooks)."""
         try:
+            # Pour les canaux messagerie, on réduit légèrement le nombre d'articles
+            # pour aller plus vite (contexte plus court pour le LLM).
+            if channel in ["telegram", "whatsapp"]:
+                top_k = min(top_k, 3)
+
             query_embedding = self.embedding_service.generate(query)
             articles = self.retrieval_service.search(query_embedding, limit=top_k)
             
             if not articles:
                 logger.info("[RAGService] Aucun article trouvé. Message générique retourné.")
                 return f"❌ VÉRIFICATION : NON VÉRIFIABLE\n📝 EXPLICATION : Je n'ai trouvé aucune source locale (RDC News) concernant '{query}'."
-            
+
+            # Pas de timeout : on attend la réponse complète de Mistral,
+            # utile pour les canaux où on préfère la qualité à tout prix.
             return await self.llm_service.summarize_full(query, articles, channel=channel)
-            
+
         except Exception as e:
             logger.error(f"Erreur critique dans le flux complet RAG: {e}")
             return f"⚠️ Une erreur interne est survenue lors de l'analyse (Mistral indisponible : {str(e)})"

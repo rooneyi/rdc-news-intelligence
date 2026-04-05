@@ -18,11 +18,15 @@ class LLMService:
         self.timeout = timeout or 300 
 
     def _build_prompt(self, query: str, articles: List[ArticleOut], channel: str = "web") -> str:
-        context = "\n".join([f"[{i+1}] {a.title}: {a.content[:500]} (Lien: {a.link})" for i, a in enumerate(articles)])
+        # On réduit un peu la taille du contexte pour accélérer Mistral
+        context = "\n".join([
+            f"[{i+1}] {a.title}: {a.content[:300]} (Lien: {a.link})" for i, a in enumerate(articles)
+        ])
         
         format_instruction = ""
         if channel in ["whatsapp", "telegram"]:
-            format_instruction = f"""Réponds au format court adapté pour messagerie ({channel}). Utilise des emojis.
+            format_instruction = f"""Réponds au format COURT adapté pour messagerie ({channel}). Utilise des emojis.
+Limite ta réponse à quelques phrases maximum.
 Format strict :
 🚨 VÉRIFICATION : (Commence par dire clairement si c'est VRAI, FAUX, IMPRÉCIS, ou NON VÉRIFIABLE)
 📝 EXPLICATION : (Explication très courte et claire sur les faits)
@@ -54,12 +58,20 @@ Articles de référence :
         url = f"{self.host}/api/generate"
         
         try:
+            # On limite le nombre de tokens générés pour réduire le temps de réponse.
+            # Réponse plus courte pour messageries.
+            max_tokens = 256 if channel == "web" else 160
             # Utilisation d'un client avec timeout désactivé pour la lecture du stream
             async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout, read=None)) as client:
                 async with client.stream(
-                    "POST", 
-                    url, 
-                    json={"model": self.model, "prompt": prompt, "stream": True},
+                    "POST",
+                    url,
+                    json={
+                        "model": self.model,
+                        "prompt": prompt,
+                        "stream": True,
+                        "num_predict": max_tokens,
+                    },
                 ) as response:
                     if response.status_code != 200:
                         yield f"Erreur Ollama ({response.status_code})"
