@@ -24,14 +24,10 @@ class EmbeddingService:
         """Charger le modèle une seule fois (cache global)"""
         if self.model_name not in self._models_cache:
             logger.info(f"Loading embedding model: {self.model_name}")
-            try:
-                model = SentenceTransformer(self.model_name, cache_folder=self.cache_folder)
-            except Exception:
-                model = SentenceTransformer(
-                    self.model_name,
-                    cache_folder=self.cache_folder,
-                    local_files_only=True,
-                )
+            # sentence-transformers 2.7.0 ne supporte pas le paramètre local_files_only
+            # Le cache est déjà géré via cache_folder; si le modèle est présent en local,
+            # il sera utilisé sans requête réseau.
+            model = SentenceTransformer(self.model_name, cache_folder=self.cache_folder)
             self._models_cache[self.model_name] = model
         return self._models_cache[self.model_name]
 
