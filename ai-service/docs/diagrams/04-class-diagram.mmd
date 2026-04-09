@@ -1,0 +1,62 @@
+classDiagram
+    class ArticleCreate {
+        +title string
+        +content string
+        +link string
+        +source_id string
+        +hash string
+    }
+
+    class ArticleOut {
+        +id int
+        +title string
+        +content string
+        +similarity float
+    }
+
+    class RAGRequest {
+        +query string
+        +top_k int
+        +min_score float
+    }
+
+    class RAGResponse {
+        +query string
+        +summary string
+        +num_sources int
+    }
+
+    class ArticleService {
+        +create_article()
+        +save_crawled_article()
+        +search_similar()
+    }
+
+    class EmbeddingService {
+        +generate(text)
+    }
+
+    class RetrievalService {
+        +get_similar_articles(vector, top_k)
+    }
+
+    class RAGService {
+        +generate_answer_stream(query, top_k)
+        +generate_full_answer(query, channel)
+    }
+
+    class LLMService {
+        +generate(prompt)
+    }
+
+    class OCRService {
+        +extract_text(image_bytes)
+    }
+
+    ArticleService --> EmbeddingService
+    RAGService --> EmbeddingService
+    RAGService --> RetrievalService
+    RAGService --> LLMService
+    RAGService --> OCRService
+    RAGRequest --> RAGService
+    RAGService --> RAGResponse

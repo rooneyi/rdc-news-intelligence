@@ -164,6 +164,26 @@ Une fois l'application lancée, la documentation Swagger est disponible sur :
      python -m app.services.crawler.scripts.sync --source-id all --limit 20
      ```
    Les articles sont sauvés en JSONL (`data/crawler/{source}.jsonl`) et envoyés au backend si `CRAWLER_BACKEND_ENDPOINT` est défini.
+
+### Mise à jour continue du corpus et du moteur de recommandation
+
+Le système ne se contente pas de répondre à une question ponctuelle : il s'appuie sur un moteur de recommandation d'articles basé sur des embeddings sémantiques et une base vectorielle.
+
+- **Alimentation par le crawler**  
+   À chaque exécution du crawler (scripts `sync` et `replay_jsonl`), les nouveaux articles sont envoyés à l'API. Le service d'articles calcule automatiquement un vecteur d'« embedding » pour chaque texte et l'enregistre dans la colonne `embedding` de la table `articles`. L'index `articles_embedding_idx` (pgvector) est mis à jour de manière transparente par PostgreSQL.
+
+- **Recommandation lors des requêtes RAG**  
+   Lors d'un appel à `/query`, `/rag`, `/rag/stream` ou `/rag/image`, le service `RetrievalService` interroge cette base vectorielle pour sélectionner les `top_k` articles les plus proches sémantiquement de la question. Ces articles jouent le rôle de **recommandations contextuelles** que le modèle Mistral utilise comme preuves avant de générer une réponse.
+
+- **Ré-embedding et évolution du modèle**  
+   En cas de changement de modèle d'embedding ou pour améliorer la qualité globale du moteur de recommandation, il est possible de relancer un ré-embedding complet ou partiel :
+   ```bash
+   python - <<'PY'
+   from app.services.train_pipeline import run_reembedding
+   print(run_reembedding(batch_size=50, force_all=False))
+   PY
+   ```
+   Cette opération recalcule les vecteurs, réindexe `articles_embedding_idx` et permet au système de bénéficier d'un espace sémantique plus performant sans ré-entraîner le LLM Mistral lui-même.
 6. **Rejouer un JSONL vers le backend** (si besoin) :
    ```bash
    python -m app.services.crawler.scripts.replay_jsonl \

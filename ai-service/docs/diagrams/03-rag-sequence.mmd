@@ -1,0 +1,21 @@
+sequenceDiagram
+    actor User
+    participant CH as Channel
+    participant API as FastAPI
+    participant EMB as EmbeddingService
+    participant RET as RetrievalService
+    participant DB as PostgreSQL
+    participant RAG as RAGService
+    participant LLM as Ollama
+
+    User->>CH: Envoyer_question
+    CH->>API: POST_rag
+    API->>EMB: Encode_query
+    EMB-->>API: Query_vector
+    API->>RET: Search_similar
+    RET->>DB: Query_top_k
+    DB-->>RET: Articles
+    RET-->>RAG: Context
+    RAG->>LLM: Generate_answer
+    LLM-->>API: Answer
+    API-->>CH: Answer_plus_sources

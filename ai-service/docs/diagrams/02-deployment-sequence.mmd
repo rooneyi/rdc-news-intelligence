@@ -1,0 +1,16 @@
+sequenceDiagram
+    actor Admin
+    participant API as FastAPI
+    participant DB as PostgreSQL
+    participant TG as TelegramPolling
+    participant CR as Crawler
+    participant WA as WhatsAppWebhook
+
+    Admin->>API: Demarrer_service
+    API->>DB: Init_tables_pgvector
+    API->>TG: Start_polling
+    API->>CR: Prepare_ingestion
+    API->>WA: Expose_webhook
+    CR-->>API: JSONL_ready
+    API->>DB: Insert_articles_embeddings
+    DB-->>API: System_ready
