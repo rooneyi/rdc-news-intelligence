@@ -80,3 +80,5 @@ Le service d'IA gère la vectorisation des articles et la recherche sémantique.
 
 ### Frontend (Next.js)
 ... (à compléter)
+
+mon systeme doit aussi fonctionner avec une interface client pour poser des question labas et l'authentification du user pour l'historique , et aussi une interface coter admin pour manager le systeme lancer le crawl a apartir de la puis 

@@ -10,7 +10,7 @@ L'objectif n'est pas seulement de montrer que le projet a été codé, mais d'ex
 
 Le backend repose sur FastAPI, choisi pour sa simplicité, sa compatibilité avec Python et sa capacité à gérer des routes asynchrones. La base de données principale est PostgreSQL, complétée par l'extension pgvector pour la recherche vectorielle. Les embeddings sont produits par SentenceTransformers, tandis que la génération de réponses est assurée par un modèle local exécuté via Ollama.
 
-Le traitement OCR est assuré par Tesseract, intégré au backend pour permettre l'analyse d'images contenant du texte. Les interactions avec les utilisateurs passent par Telegram et WhatsApp, chacun avec son mode d'intégration spécifique. Telegram fonctionne par polling, alors que WhatsApp s'appuie sur des webhooks fournis par l'API Cloud de Meta.
+Le traitement OCR est assuré par Tesseract, intégré au backend pour permettre l'analyse d'images contenant du texte. Les interactions avec les utilisateurs passent par Telegram et WhatsApp, chacun avec son mode d'intégration spécifique. Telegram fonctionne par polling, alors que WhatsApp s'appuie sur des webhooks fournis par l'API Cloud de Meta. Un service de décision thématique complète désormais cette chaîne afin de n'activer le bot en groupe que lorsque le contexte de groupe est identifiable et que le contenu concerne la politique, le sport, la santé ou la guerre; les messages privés continuent de suivre le flux complet sans filtrage.
 
 Le projet utilise également un crawler pour alimenter le corpus en continu. Les articles collectés sont enregistrés sous format JSONL, puis réinjectés dans l'API afin d'être vectorisés et indexés. Cette chaîne technique constitue le socle de la mise à jour continue du moteur de recommandation.
 
@@ -20,13 +20,13 @@ L'organisation du projet suit une séparation claire entre l'entrée de l'applic
 
 Les routes gèrent les points d'accès externes. Certaines routes exposent les fonctionnalités de recherche et de génération. D'autres reçoivent les webhooks de messagerie ou les requêtes d'administration. Cette organisation améliore la lisibilité du projet et facilite la maintenance.
 
-Les services métiers encapsulent la logique importante du système. Le service de vectorisation transforme les textes en embeddings. Le service de recherche interroge la base PostgreSQL. Le service de génération dialogue avec Ollama. Le service OCR extrait le texte des images. Le service article gère l'insertion et la mise à jour des documents. Enfin, le service de pipeline d'entraînement permet de recalculer les représentations en cas de changement de modèle.
+Les services métiers encapsulent la logique importante du système. Le service de vectorisation transforme les textes en embeddings. Le service de recherche interroge la base PostgreSQL. Le service de génération dialogue avec Ollama. Le service OCR extrait le texte des images. Un service de décision thématique analyse les messages avant déclenchement pour les groupes. Le service article gère l'insertion et la mise à jour des documents. Enfin, le service de pipeline d'entraînement permet de recalculer les représentations en cas de changement de modèle.
 
 ## 4.4. Flux d'exécution principaux
 
-Le premier flux est celui de la requête textuelle. Lorsqu'un utilisateur envoie une question, le texte est vectorisé, les articles les plus proches sont récupérés, puis le modèle génératif synthétise une réponse structurée. Ce processus constitue le cœur fonctionnel du système et correspond au cas d'usage principal du projet.
+Le premier flux est celui de la requête textuelle. Lorsqu'un utilisateur envoie une question, le texte est d'abord soumis au contrôle thématique si le message provient d'un groupe identifiable. Si le contenu est jugé pertinent, ou si la conversation est privée, le texte est vectorisé, les articles les plus proches sont récupérés, puis le modèle génératif synthétise une réponse structurée. Ce processus constitue le cœur fonctionnel du système et correspond au cas d'usage principal du projet.
 
-Le deuxième flux concerne les images. Le message contenant une image est reçu, le fichier est téléchargé, puis le texte est extrait par OCR. Le contenu obtenu rejoint ensuite la même chaîne de recherche et de génération que les requêtes textuelles. Cette capacité est essentielle pour traiter les contenus partagés dans les messageries.
+Le deuxième flux concerne les images. Le message contenant une image est reçu, le fichier est téléchargé, puis le texte est extrait par OCR. Lorsqu'une légende est présente, elle est fusionnée avec le résultat OCR afin de nourrir le filtre thématique. Le contenu obtenu rejoint ensuite la même chaîne de recherche et de génération que les requêtes textuelles si le message est accepté. Cette capacité est essentielle pour traiter les contenus partagés dans les messageries tout en évitant d'activer le bot sur des images hors sujet dans les groupes identifiables.
 
 Le troisième flux concerne l'ingestion de données. Le crawler collecte les articles des sources configurées, produit un fichier JSONL, puis les articles sont injectés dans le backend. À ce moment, ils sont nettoyés, vectorisés et stockés avec leurs métadonnées. Le système devient alors immédiatement capable de les retrouver dans ses recherches.
 
@@ -40,7 +40,7 @@ Le crawler joue également un rôle de maintenance. En collectant régulièremen
 
 Les premiers tests montrent que le système est capable de retrouver des articles proches d'une requête même lorsque les mots utilisés diffèrent fortement de ceux du corpus. Cette capacité confirme l'intérêt de la recherche vectorielle. Les réponses produites par le modèle de langage sont plus utiles lorsqu'elles sont précédées par une bonne phase de récupération documentaire.
 
-L'intégration multicanale améliore également l'expérience utilisateur. Telegram permet une consultation rapide et simple, tandis que WhatsApp facilite l'usage dans les contextes où cette messagerie est dominante. L'ajout de l'OCR élargit enfin le champ d'application du système aux contenus visuels.
+L'intégration multicanale améliore également l'expérience utilisateur. Telegram permet une consultation rapide et simple, tandis que WhatsApp facilite l'usage dans les contextes où cette messagerie est dominante. L'ajout de l'OCR élargit enfin le champ d'application du système aux contenus visuels, et le filtrage thématique garantit que les groupes ne déclenchent le traitement automatique que pour les sujets visés.
 
 ## 4.7. Limites actuelles
 

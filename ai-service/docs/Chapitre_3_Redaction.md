@@ -10,7 +10,7 @@ L'intérêt d'une telle architecture est particulièrement fort dans un contexte
 
 ### 3.2.1. Spécifications fonctionnelles
 
-Le système doit répondre à plusieurs besoins fonctionnels. Il doit d'abord permettre à un utilisateur de soumettre une requête textuelle et d'obtenir en retour une synthèse structurée fondée sur les articles les plus pertinents. Il doit également accepter une image contenant du texte, extraire le contenu par OCR, puis utiliser ce texte comme base de recherche dans le moteur RAG. En parallèle, il doit exposer ses fonctionnalités via plusieurs interfaces, notamment une interface web, Telegram et WhatsApp.
+Le système doit répondre à plusieurs besoins fonctionnels. Il doit d'abord permettre à un utilisateur de soumettre une requête textuelle et d'obtenir en retour une synthèse structurée fondée sur les articles les plus pertinents. Il doit également accepter une image contenant du texte, extraire le contenu par OCR, puis utiliser ce texte comme base de recherche dans le moteur RAG. En parallèle, il doit exposer ses fonctionnalités via plusieurs interfaces, notamment une interface web, Telegram et WhatsApp. Dans les conversations privées, le système répond à toutes les requêtes; dans les groupes, il n'active le traitement qu'après une évaluation thématique portant sur la politique, le sport, la santé ou la guerre.
 
 Le système doit aussi permettre l'ingestion continue de nouvelles sources. Cette fonction est assurée par le crawler, qui enrichit régulièrement le corpus. Enfin, il doit conserver les articles, leurs métadonnées et leurs embeddings dans une base de données permettant une recherche rapide et cohérente.
 
@@ -22,13 +22,13 @@ Sur le plan non fonctionnel, plusieurs contraintes ont été retenues. La premi�
 
 ### 3.3.1. Requête textuelle via messagerie
 
-Le premier cas d'utilisation concerne l'utilisateur qui interroge le système par message texte. L'utilisateur formule une question, par exemple sur un événement politique, sanitaire ou médiatique. Le message est capté par le canal de communication, puis transmis au backend. Le texte est vectorisé, comparé aux articles indexés dans PostgreSQL, et les documents les plus proches sont utilisés comme contexte pour la génération d'une réponse.
+Le premier cas d'utilisation concerne l'utilisateur qui interroge le système par message texte. L'utilisateur formule une question, par exemple sur un événement politique, sanitaire ou médiatique. Le message est capté par le canal de communication, puis transmis au backend. Dans un groupe, ce message est d'abord évalué par un filtre thématique IA afin de vérifier qu'il concerne bien la politique, le sport, la santé ou la guerre. Si le message est accepté, le texte est vectorisé, comparé aux articles indexés dans PostgreSQL, et les documents les plus proches sont utilisés comme contexte pour la génération d'une réponse.
 
 Le résultat attendu n'est pas une réponse générale produite hors contexte, mais une synthèse structurée accompagnée de références. Cette logique permet de transformer une simple requête en une réponse utile, vérifiable et contextualisée.
 
 ### 3.3.2. Requête par image
 
-Le second cas d'utilisation concerne l'analyse d'une image contenant du texte. Dans ce scénario, l'utilisateur envoie une capture d'écran, une affiche ou un visuel partagé sur une messagerie. Le système récupère l'image, extrait le texte par OCR, puis applique le même pipeline que pour une requête textuelle.
+Le second cas d'utilisation concerne l'analyse d'une image contenant du texte. Dans ce scénario, l'utilisateur envoie une capture d'écran, une affiche ou un visuel partagé sur une messagerie. Le système récupère l'image, extrait le texte par OCR, puis applique le même pipeline que pour une requête textuelle. Lorsque l'image est accompagnée d'une légende, le texte de la légende est combiné au résultat OCR avant l'évaluation thématique, ce qui permet de décider si le message mérite une activation du bot en groupe.
 
 Cette fonctionnalité est importante dans un environnement où les rumeurs circulent souvent sous forme d'images partagées dans les groupes WhatsApp. Elle permet d'utiliser le moteur RAG non seulement comme outil de recommandation, mais aussi comme aide à la vérification rapide.
 
@@ -60,7 +60,7 @@ Cette chaîne constitue le cœur du projet. Elle garantit que la réponse finale
 
 ### 3.5.3. Intégration multicanale
 
-L'accès au système est prévu sur plusieurs canaux. Telegram est utilisé via un mécanisme de polling, ce qui simplifie l'exécution locale et l'intégration au backend. WhatsApp est intégré par webhook via l'API Cloud de Meta, ce qui permet de recevoir les messages et les médias en temps réel. L'interface web peut quant à elle servir de point d'entrée direct pour des tests, des consultations ou des opérations d'administration.
+L'accès au système est prévu sur plusieurs canaux. Telegram est utilisé via un mécanisme de polling, ce qui simplifie l'exécution locale et l'intégration au backend. WhatsApp est intégré par webhook via l'API Cloud de Meta, ce qui permet de recevoir les messages et les médias en temps réel. Lorsqu'un contexte de groupe est identifiable, les messages passent d'abord par un contrôle thématique IA avant tout déclenchement du moteur RAG, alors que les conversations privées contournent ce filtre pour conserver une réponse immédiate. L'interface web peut quant à elle servir de point d'entrée direct pour des tests, des consultations ou des opérations d'administration.
 
 Cette stratégie multicanale est adaptée au contexte cible, car elle permet de rejoindre les utilisateurs là où ils se trouvent déjà. Le système n'impose pas une nouvelle habitude de consultation; il s'insère dans des usages existants.
 

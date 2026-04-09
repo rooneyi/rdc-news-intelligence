@@ -2,12 +2,52 @@ import logging
 from fastapi import APIRouter, Request, BackgroundTasks, HTTPException, Response
 from app.services.rag_service import RAGService
 from app.services.ocr_service import OCRService
+from app.services.topic_gate_service import TopicGateService
 import httpx
 import os
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 ocr_service = OCRService()
+topic_gate_service = TopicGateService()
+
+
+async def _send_telegram_message(bot_token: str, chat_id: str, text: str) -> None:
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            json={"chat_id": chat_id, "text": text},
+        )
+
+
+async def _extract_telegram_photo_text(message: dict, bot_token: str) -> str:
+    photos = message.get("photo") or []
+    if not photos:
+        return ""
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        best_photo = photos[-1]
+        file_id = best_photo.get("file_id")
+        if not file_id:
+            return ""
+
+        resp_file = await client.get(
+            f"https://api.telegram.org/bot{bot_token}/getFile",
+            params={"file_id": file_id},
+        )
+        file_data = resp_file.json()
+        if not file_data.get("ok"):
+            logger.error("[Telegram] Erreur getFile: %s", file_data)
+            return ""
+
+        file_path = file_data["result"]["file_path"]
+        file_url = f"https://api.telegram.org/file/bot{bot_token}/{file_path}"
+        img_resp = await client.get(file_url)
+        return ocr_service.extract_text(img_resp.content)
+
+
+def _build_combined_message(*parts: str | None) -> str:
+    return topic_gate_service.merge_text(*parts)
 
 # Ce webhook traitera le message de l'utilisateur et enverra la réponse en arrière-plan
 async def process_telegram_message(chat_id: str, query: str):
@@ -89,12 +129,23 @@ async def process_telegram_message(chat_id: str, query: str):
     except Exception as e:
         logger.error(f"Erreur streaming Telegram: {e}")
 
-async def process_whatsapp_message(phone_number: str, query: str):
+async def process_whatsapp_message(phone_number: str, query: str, require_topic_gate: bool = False):
     whatsapp_token = os.getenv("WHATSAPP_TOKEN")
     phone_id = os.getenv("WHATSAPP_PHONE_ID")
     if not whatsapp_token or not phone_id:
         logger.error("Tokens WhatsApp manquants")
         return
+
+    if require_topic_gate:
+        decision = await topic_gate_service.classify(query)
+        if not decision.should_activate:
+            logger.info(
+                "[WhatsApp] Message ignoré (thème=%s, confiance=%.2f): %.80s",
+                decision.theme,
+                decision.confidence,
+                query,
+            )
+            return
         
     rag_service = RAGService()
     # Utilisation du canal whatsapp pour avoir un prompt court et précis
@@ -116,7 +167,12 @@ async def process_whatsapp_message(phone_number: str, query: str):
         logger.error(f"Erreur envoi WhatsApp: {e}")
 
 
-async def process_whatsapp_image(phone_number: str, media_id: str):
+async def process_whatsapp_image(
+    phone_number: str,
+    media_id: str,
+    caption: str | None = None,
+    require_topic_gate: bool = False,
+):
     """Traite une image reçue sur WhatsApp : OCR local puis RAG texte."""
     whatsapp_token = os.getenv("WHATSAPP_TOKEN")
     phone_id = os.getenv("WHATSAPP_PHONE_ID")
@@ -144,8 +200,9 @@ async def process_whatsapp_image(phone_number: str, media_id: str):
 
             # 3. OCR local
             extracted_text = ocr_service.extract_text(image_bytes)
-            if not extracted_text:
-                logger.info("[WhatsApp] Aucun texte extrait de l'image pour %s", phone_number)
+            combined_query = _build_combined_message(caption, extracted_text)
+            if not combined_query:
+                logger.info("[WhatsApp] Aucun texte exploitable extrait de l'image pour %s", phone_number)
                 payload = {
                     "messaging_product": "whatsapp",
                     "to": phone_number,
@@ -161,10 +218,21 @@ async def process_whatsapp_image(phone_number: str, media_id: str):
 
             logger.info("[WhatsApp] Texte OCR extrait (%s): %.80s…", phone_number, extracted_text)
 
+            if require_topic_gate:
+                decision = await topic_gate_service.classify(combined_query)
+                if not decision.should_activate:
+                    logger.info(
+                        "[WhatsApp] Image ignorée (thème=%s, confiance=%.2f): %.80s",
+                        decision.theme,
+                        decision.confidence,
+                        combined_query,
+                    )
+                    return
+
             # 4. RAG texte complet
             rag_service = RAGService()
             response_text = await rag_service.generate_full_answer(
-                extracted_text, channel="whatsapp"
+                combined_query, channel="whatsapp"
             )
 
             payload = {
@@ -190,12 +258,58 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     payload = await request.json()
     logger.info(f"Telegram webhook reçu : {payload}")
     
-    if "message" in payload and "text" in payload["message"]:
-        chat_id = payload["message"]["chat"]["id"]
-        text = payload["message"]["text"]
-        
-        # Filtre optionnel pour éviter le spam, activable si besoin (ex: text.startswith('/verifier'))
+    message = payload.get("message", {})
+    chat = message.get("chat", {})
+    chat_id = chat.get("id")
+    chat_type = chat.get("type", "private")
+
+    if chat_id is None:
+        return {"status": "ok"}
+
+    text = message.get("text")
+    if text:
+        if topic_gate_service.is_group_chat(chat_type):
+            decision = await topic_gate_service.classify(text)
+            if not decision.should_activate:
+                logger.info(
+                    "[Telegram] Message groupe ignoré (type=%s, thème=%s, confiance=%.2f): %.80s",
+                    chat_type,
+                    decision.theme,
+                    decision.confidence,
+                    text,
+                )
+                return {"status": "ok"}
+
         background_tasks.add_task(process_telegram_message, str(chat_id), text)
+        return {"status": "ok"}
+
+    if message.get("photo"):
+        caption = message.get("caption")
+        extracted_text = await _extract_telegram_photo_text(message, os.getenv("TELEGRAM_BOT_TOKEN", ""))
+        combined_query = _build_combined_message(caption, extracted_text)
+
+        if not combined_query:
+            if not topic_gate_service.is_group_chat(chat_type):
+                await _send_telegram_message(
+                    os.getenv("TELEGRAM_BOT_TOKEN", ""),
+                    str(chat_id),
+                    "❌ Impossible d'extraire du texte de cette image.",
+                )
+            return {"status": "ok"}
+
+        if topic_gate_service.is_group_chat(chat_type):
+            decision = await topic_gate_service.classify(combined_query)
+            if not decision.should_activate:
+                logger.info(
+                    "[Telegram] Image groupe ignorée (type=%s, thème=%s, confiance=%.2f): %.80s",
+                    chat_type,
+                    decision.theme,
+                    decision.confidence,
+                    combined_query,
+                )
+                return {"status": "ok"}
+
+        background_tasks.add_task(process_telegram_message, str(chat_id), combined_query)
         
     return {"status": "ok"}
 
@@ -216,18 +330,32 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
             msg = value["messages"][0]
             phone_number = msg["from"]
             msg_type = msg.get("type")
+            whatsapp_scope = topic_gate_service.detect_whatsapp_scope(value, msg)
+            require_topic_gate = whatsapp_scope == "group"
 
             if msg_type == "text":
                 text = msg["text"]["body"]
                 logger.info(f"Message texte WhatsApp de {phone_number} : {text}")
-                background_tasks.add_task(process_whatsapp_message, phone_number, text)
+                background_tasks.add_task(
+                    process_whatsapp_message,
+                    phone_number,
+                    text,
+                    require_topic_gate,
+                )
 
             elif msg_type == "image":
                 image = msg.get("image", {})
                 media_id = image.get("id")
+                caption = image.get("caption")
                 logger.info(f"Image WhatsApp reçue de {phone_number} (media_id=%s)", media_id)
                 if media_id:
-                    background_tasks.add_task(process_whatsapp_image, phone_number, media_id)
+                    background_tasks.add_task(
+                        process_whatsapp_image,
+                        phone_number,
+                        media_id,
+                        caption,
+                        require_topic_gate,
+                    )
     except Exception as e:
         logger.error(f"Erreur de parsing payload WhatsApp: {e}")
         
