@@ -52,6 +52,7 @@ class RAGRequest(BaseModel):
     query: str
     top_k: Optional[int] = 5
     min_score: Optional[float] = 0.0  # seuil de similarité (0-1)
+    channel: Optional[str] = "web"  # 'web', 'telegram', 'whatsapp', etc. — indique la source
 
 
 class RAGResponse(BaseModel):

@@ -79,6 +79,36 @@ Le service d'IA gère la vectorisation des articles et la recherche sémantique.
 ... (à compléter)
 
 ### Frontend (Next.js)
-... (à compléter)
+Le frontend fournit deux espaces principaux avec une direction visuelle premium inspirée de shadcn, en bleu foncé, bleu clair et blanc, avec une base Tailwind.
+- **Espace client** : authentification, pose de questions, consultation de l'historique et affichage des réponses sourcées.
+- **Espace admin** : supervision du système, gestion des sources, lancement du crawl et suivi de l'état du pipeline.
+- **Objectif UI** : interface claire, moderne et stable pour l'usage quotidien sur desktop et mobile.
 
-mon systeme doit aussi fonctionner avec une interface client pour poser des question labas et l'authentification du user pour l'historique , et aussi une interface coter admin pour manager le systeme lancer le crawl a apartir de la puis 
+---
+
+## Lancer tout en meme temps (front + back + FastAPI)
+
+Depuis la racine du projet, lance:
+
+```bash
+bash scripts/dev-all.sh
+```
+
+Ce script demarre:
+- Frontend Next.js: http://127.0.0.1:3000
+- Backend Symfony: http://127.0.0.1:8000
+- Service FastAPI: http://127.0.0.1:8001
+
+Les logs sont ecrits dans `.logs/`.
+
+Pour arreter tous les services: `Ctrl+C` dans le terminal du script.
+
+### Connexion frontend vers FastAPI
+
+Le frontend appelle FastAPI via un proxy Next (`/api/fastapi/rag`) pour eviter les problemes CORS.
+
+Si besoin, configure l'URL FastAPI dans `frontend/.env.local`:
+
+```bash
+NEXT_PUBLIC_FASTAPI_URL=http://127.0.0.1:8001
+```

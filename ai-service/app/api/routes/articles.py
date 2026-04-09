@@ -72,7 +72,14 @@ def query_articles(payload: QueryRequest):
 
 @router.post("/rag", response_model=RAGResponse, summary="RAG classique", tags=["RAG"])
 async def rag_query(payload: RAGRequest):
-    """Version non-streaming : réponse complète via le pipeline RAG"""
+    """Version non-streaming : réponse complète via le pipeline RAG
+    
+    Le paramètre channel indique la source: 'web', 'telegram', 'whatsapp', etc.
+    Cette info permet de router la réponse au bon endroit si besoin.
+    """
+    channel = getattr(payload, "channel", "web")
+    logger.info(f"[RAG] Requête depuis channel={channel}: {payload.query[:80]}")
+    
     result = rag_service.generate_answer_stream(payload.query, payload.top_k)
     summary = ""
     sources = []
@@ -81,6 +88,8 @@ async def rag_query(payload: RAGRequest):
             summary += chunk.get("text", "")
         elif chunk.get("type") == "sources":
             sources = chunk.get("sources", [])
+    
+    logger.info(f"[RAG] Réponse complète ({len(summary)} chars, {len(sources)} sources)")
     return {"summary": summary or "Mistral n'a pas pu générer de réponse.", "sources": sources, "query": payload.query}
 
 
