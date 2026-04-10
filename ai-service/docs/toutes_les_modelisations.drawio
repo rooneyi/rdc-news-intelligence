@@ -1,0 +1,262 @@
+<mxfile host="65bd71144e">
+    <diagram id="use_cases" name="1. Use Cases">
+        <mxGraphModel dx="866" dy="680" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" background="#ffffff" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="uc_u" value="Utilisateur" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="100" width="40" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_a" value="Administrateur" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="400" width="40" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_sys" value="RDC News Intelligence" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="250" y="50" width="300" height="500" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_1" value="Consulter réponse RAG" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" parent="uc_sys" vertex="1">
+                    <mxGeometry x="70" y="60" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_2" value="Vérifier image rumeur" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" parent="uc_sys" vertex="1">
+                    <mxGeometry x="70" y="150" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_3" value="Rechercher articles similaires" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" parent="uc_sys" vertex="1">
+                    <mxGeometry x="70" y="240" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_4" value="Lancer crawl" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" parent="uc_sys" vertex="1">
+                    <mxGeometry x="70" y="330" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_5" value="Indexer articles" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" parent="uc_sys" vertex="1">
+                    <mxGeometry x="70" y="420" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_u_uc1" style="endArrow=classic;html=1;rounded=0;strokeColor=#000000;" parent="1" source="uc_u" target="uc_1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_u_uc2" style="endArrow=classic;html=1;rounded=0;strokeColor=#000000;" parent="1" source="uc_u" target="uc_2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_u_uc3" style="endArrow=classic;html=1;rounded=0;strokeColor=#000000;" parent="1" source="uc_u" target="uc_3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_a_uc4" style="endArrow=classic;html=1;rounded=0;strokeColor=#000000;" parent="1" source="uc_a" target="uc_4" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_a_uc5" style="endArrow=classic;html=1;rounded=0;strokeColor=#000000;" parent="1" source="uc_a" target="uc_5" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="dep_seq" name="2. Deployment Sequence">
+        <mxGraphModel dx="1000" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+            <root>
+                <mxCell id="ds_0"/>
+                <mxCell id="ds_1" parent="ds_0"/>
+                <mxCell id="ds_admin" value="Admin" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="ds_1">
+                    <mxGeometry x="50" y="50" width="30" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="ds_api" value="FastAPI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="ds_1">
+                    <mxGeometry x="200" y="65" width="100" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="ds_db" value="PostgreSQL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="ds_1">
+                    <mxGeometry x="400" y="65" width="100" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="ds_cr" value="Crawler" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="ds_1">
+                    <mxGeometry x="600" y="65" width="100" height="40" as="geometry"/>
+                </mxCell>
+                <!-- Lifelines (approximate) -->
+                <mxCell id="ll_admin" value="" style="endArrow=none;dashed=1;html=1;strokeColor=#000000;" edge="1" parent="ds_1" source="ds_admin">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="65" y="400" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ll_api" value="" style="endArrow=none;dashed=1;html=1;strokeColor=#000000;" edge="1" parent="ds_1" source="ds_api">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="250" y="400" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ll_db" value="" style="endArrow=none;dashed=1;html=1;strokeColor=#000000;" edge="1" parent="ds_1" source="ds_db">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="450" y="400" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ll_cr" value="" style="endArrow=none;dashed=1;html=1;strokeColor=#000000;" edge="1" parent="ds_1" source="ds_cr">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="650" y="400" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <!-- Messages -->
+                <mxCell id="msg_1" value="Démarrer_service" style="endArrow=classic;html=1;strokeColor=#000000;fontColor=#000000;" edge="1" parent="ds_1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="65" y="150" as="sourcePoint"/>
+                        <mxPoint x="250" y="150" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="msg_2" value="Init_tables_pgvector" style="endArrow=classic;html=1;strokeColor=#000000;fontColor=#000000;" edge="1" parent="ds_1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="250" y="180" as="sourcePoint"/>
+                        <mxPoint x="450" y="180" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="msg_3" value="Prepare_ingestion" style="endArrow=classic;html=1;strokeColor=#000000;fontColor=#000000;" edge="1" parent="ds_1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="250" y="210" as="sourcePoint"/>
+                        <mxPoint x="650" y="210" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="msg_4" value="JSONL_ready" style="endArrow=classic;html=1;dashed=1;strokeColor=#000000;fontColor=#000000;" edge="1" parent="ds_1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="650" y="240" as="sourcePoint"/>
+                        <mxPoint x="250" y="240" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="msg_5" value="Insert_articles" style="endArrow=classic;html=1;strokeColor=#000000;fontColor=#000000;" edge="1" parent="ds_1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="250" y="270" as="sourcePoint"/>
+                        <mxPoint x="450" y="270" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="msg_6" value="System_ready" style="endArrow=classic;html=1;dashed=1;strokeColor=#000000;fontColor=#000000;" edge="1" parent="ds_1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="450" y="300" as="sourcePoint"/>
+                        <mxPoint x="250" y="300" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="rag_seq" name="3. RAG Sequence">
+        <mxGraphModel dx="1000" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+            <root>
+                <mxCell id="rs_0"/>
+                <mxCell id="rs_1" parent="rs_0"/>
+                <mxCell id="rs_u" value="User" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rs_1">
+                    <mxGeometry x="20" y="40" width="30" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="rs_ch" value="Channel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rs_1">
+                    <mxGeometry x="100" y="60" width="80" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="rs_api" value="FastAPI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rs_1">
+                    <mxGeometry x="220" y="60" width="80" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="rs_emb" value="Embedding" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rs_1">
+                    <mxGeometry x="340" y="60" width="80" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="rs_db" value="PostgreSQL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rs_1">
+                    <mxGeometry x="460" y="60" width="80" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="rs_llm" value="Ollama" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rs_1">
+                    <mxGeometry x="580" y="60" width="80" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_1" value="Envoyer_Q" style="endArrow=classic;html=1;strokeColor=#000000;fontColor=#000000;" edge="1" parent="rs_1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="35" y="130" as="sourcePoint"/>
+                        <mxPoint x="140" y="130" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m_2" value="POST_rag" style="endArrow=classic;html=1;strokeColor=#000000;fontColor=#000000;" edge="1" parent="rs_1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="140" y="160" as="sourcePoint"/>
+                        <mxPoint x="260" y="160" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m_3" value="Encode" style="endArrow=classic;html=1;strokeColor=#000000;fontColor=#000000;" edge="1" parent="rs_1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="260" y="190" as="sourcePoint"/>
+                        <mxPoint x="380" y="190" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m_4" value="Vector" style="endArrow=classic;html=1;dashed=1;strokeColor=#000000;fontColor=#000000;" edge="1" parent="rs_1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="380" y="220" as="sourcePoint"/>
+                        <mxPoint x="260" y="220" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m_5" value="Search" style="endArrow=classic;html=1;strokeColor=#000000;fontColor=#000000;" edge="1" parent="rs_1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="260" y="250" as="sourcePoint"/>
+                        <mxPoint x="500" y="250" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m_6" value="Context" style="endArrow=classic;html=1;dashed=1;strokeColor=#000000;fontColor=#000000;" edge="1" parent="rs_1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="500" y="280" as="sourcePoint"/>
+                        <mxPoint x="260" y="280" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m_7" value="Generate" style="endArrow=classic;html=1;strokeColor=#000000;fontColor=#000000;" edge="1" parent="rs_1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="260" y="310" as="sourcePoint"/>
+                        <mxPoint x="620" y="310" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m_8" value="Answer" style="endArrow=classic;html=1;dashed=1;strokeColor=#000000;fontColor=#000000;" edge="1" parent="rs_1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="620" y="340" as="sourcePoint"/>
+                        <mxPoint x="260" y="340" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m_9" value="Output" style="endArrow=classic;html=1;dashed=1;strokeColor=#000000;fontColor=#000000;" edge="1" parent="rs_1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="260" y="370" as="sourcePoint"/>
+                        <mxPoint x="35" y="370" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="class_diag" name="4. Class Diagram">
+        <mxGraphModel dx="1000" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+            <root>
+                <mxCell id="cd_0"/>
+                <mxCell id="cd_1" parent="cd_0"/>
+                <mxCell id="cd_c1" value="ArticleCreate&#10;+ title&#10;+ content&#10;+ link" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;" vertex="1" parent="cd_1">
+                    <mxGeometry x="50" y="50" width="120" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="cd_c2" value="RAGRequest&#10;+ query&#10;+ top_k" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;" vertex="1" parent="cd_1">
+                    <mxGeometry x="50" y="160" width="120" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="cd_c3" value="RAGService&#10;+ generate_answer()" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;" vertex="1" parent="cd_1">
+                    <mxGeometry x="250" y="160" width="150" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="cd_c4" value="EmbeddingService&#10;+ generate()" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;" vertex="1" parent="cd_1">
+                    <mxGeometry x="500" y="50" width="140" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="cd_c5" value="RetrievalService&#10;+ get_similar()" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;" vertex="1" parent="cd_1">
+                    <mxGeometry x="500" y="140" width="140" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="cd_c6" value="LLMService&#10;+ generate(prompt)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;" vertex="1" parent="cd_1">
+                    <mxGeometry x="500" y="230" width="140" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="cd_e1" edge="1" parent="cd_1" source="cd_c2" target="cd_c3" style="endArrow=classic;html=1;strokeColor=#000000;fontColor=#000000;dashed=1;">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="cd_e2" edge="1" parent="cd_1" source="cd_c3" target="cd_c4" style="endArrow=classic;html=1;strokeColor=#000000;fontColor=#000000;">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="cd_e3" edge="1" parent="cd_1" source="cd_c3" target="cd_c5" style="endArrow=classic;html=1;strokeColor=#000000;fontColor=#000000;">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="cd_e4" edge="1" parent="cd_1" source="cd_c3" target="cd_c6" style="endArrow=classic;html=1;strokeColor=#000000;fontColor=#000000;">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="erd_diag" name="5. ERD">
+        <mxGraphModel dx="1000" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+            <root>
+                <mxCell id="erd_0"/>
+                <mxCell id="erd_1" parent="erd_0"/>
+                <mxCell id="tbl_articles" value="ARTICLES&#10;-----------&#10;PK id (int)&#10;title (string)&#10;content (string)&#10;source_id (string)&#10;link (string)&#10;hash (string)&#10;embedding (vector)" style="shape=note;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;" vertex="1" parent="erd_1">
+                    <mxGeometry x="100" y="100" width="180" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="tbl_training" value="TRAINING_RUNS&#10;-----------&#10;PK id (int)&#10;started_at (datetime)&#10;status (string)&#10;model_name (string)&#10;processed (int)" style="shape=note;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;" vertex="1" parent="erd_1">
+                    <mxGeometry x="400" y="100" width="180" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="rel_1" value="1..N" style="endArrow=none;html=1;strokeColor=#000000;fontColor=#000000;startArrow=diamond;startFill=1;" edge="1" parent="erd_1" source="tbl_training" target="tbl_articles">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
