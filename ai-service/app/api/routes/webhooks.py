@@ -77,7 +77,11 @@ async def process_telegram_message(chat_id: str, query: str):
             text_buffer = ""
             sources_header = ""
 
-            async for event in rag_service.generate_answer_stream(query, top_k=int(os.getenv("TELEGRAM_TOP_K", "3"))):
+            async for event in rag_service.generate_answer_stream(
+                query,
+                top_k=int(os.getenv("TELEGRAM_TOP_K", "3")),
+                channel="telegram",
+            ):
                 event_type = event.get("type")
 
                 if event_type == "sources":
@@ -129,6 +133,71 @@ async def process_telegram_message(chat_id: str, query: str):
     except Exception as e:
         logger.error(f"Erreur streaming Telegram: {e}")
 
+
+async def _send_whatsapp_text(phone_number: str, body: str) -> None:
+    whatsapp_token = os.getenv("WHATSAPP_TOKEN")
+    phone_id = os.getenv("WHATSAPP_PHONE_ID")
+    if not whatsapp_token or not phone_id:
+        logger.error("Tokens WhatsApp manquants")
+        return
+
+    url = f"https://graph.facebook.com/v17.0/{phone_id}/messages"
+    headers = {"Authorization": f"Bearer {whatsapp_token}", "Content-Type": "application/json"}
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": phone_number,
+        "type": "text",
+        "text": {"body": body},
+    }
+
+    async with httpx.AsyncClient() as client:
+        await client.post(url, json=payload, headers=headers)
+
+
+async def _stream_whatsapp_response(phone_number: str, query: str) -> None:
+    rag_service = RAGService()
+    text_buffer = ""
+    sources: list[dict] = []
+
+    async for event in rag_service.generate_answer_stream(
+        query,
+        top_k=int(os.getenv("WHATSAPP_TOP_K", "3")),
+        channel="whatsapp",
+    ):
+        event_type = event.get("type")
+
+        if event_type == "sources":
+            sources = event.get("sources", [])
+            continue
+
+        if event_type == "summary_chunk":
+            text_buffer += event.get("text", "")
+            if len(text_buffer) >= 350:
+                await _send_whatsapp_text(phone_number, text_buffer)
+                text_buffer = ""
+            continue
+
+        if event_type == "error":
+            await _send_whatsapp_text(
+                phone_number,
+                event.get("message", "Erreur interne RAG"),
+            )
+            return
+
+        if event_type == "done":
+            break
+
+    if text_buffer.strip():
+        await _send_whatsapp_text(phone_number, text_buffer)
+
+    if sources:
+        lines = []
+        for i, source in enumerate(sources, 1):
+            title = source.get("title") or "Source locale"
+            url = source.get("url") or "(lien indisponible)"
+            lines.append(f"[{i}] {title} - {url}")
+        await _send_whatsapp_text(phone_number, "🔗 SOURCES LOCALES :\n" + "\n".join(lines))
+
 async def process_whatsapp_message(phone_number: str, query: str, require_topic_gate: bool = False):
     whatsapp_token = os.getenv("WHATSAPP_TOKEN")
     phone_id = os.getenv("WHATSAPP_PHONE_ID")
@@ -147,22 +216,9 @@ async def process_whatsapp_message(phone_number: str, query: str, require_topic_
             )
             return
         
-    rag_service = RAGService()
-    # Utilisation du canal whatsapp pour avoir un prompt court et précis
-    response_text = await rag_service.generate_full_answer(query, channel="whatsapp")
-    
-    # Envoi de la réponse à WhatsApp (Cloud API)
-    url = f"https://graph.facebook.com/v17.0/{phone_id}/messages"
-    headers = {"Authorization": f"Bearer {whatsapp_token}", "Content-Type": "application/json"}
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": phone_number,
-        "type": "text",
-        "text": {"body": response_text}
-    }
+
     try:
-        async with httpx.AsyncClient() as client:
-            await client.post(url, json=payload, headers=headers)
+        await _stream_whatsapp_response(phone_number, query)
     except Exception as e:
         logger.error(f"Erreur envoi WhatsApp: {e}")
 
@@ -229,23 +285,8 @@ async def process_whatsapp_image(
                     )
                     return
 
-            # 4. RAG texte complet
-            rag_service = RAGService()
-            response_text = await rag_service.generate_full_answer(
-                combined_query, channel="whatsapp"
-            )
-
-            payload = {
-                "messaging_product": "whatsapp",
-                "to": phone_number,
-                "type": "text",
-                "text": {"body": response_text},
-            }
-            await client.post(
-                f"https://graph.facebook.com/v17.0/{phone_id}/messages",
-                json=payload,
-                headers={**base_headers, "Content-Type": "application/json"},
-            )
+            # 4. RAG texte en streaming par morceaux
+            await _stream_whatsapp_response(phone_number, combined_query)
 
     except Exception as e:  # noqa: BLE001
         logger.error(f"Erreur traitement image WhatsApp: {e}")
@@ -335,7 +376,7 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
 
             if msg_type == "text":
                 text = msg["text"]["body"]
-                logger.info(f"Message texte WhatsApp de {phone_number} : {text}")
+                logger.info("[WhatsApp] Requete recue (%s): %.100s", phone_number, text)
                 background_tasks.add_task(
                     process_whatsapp_message,
                     phone_number,

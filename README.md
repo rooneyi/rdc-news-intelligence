@@ -96,8 +96,7 @@ bash scripts/dev-all.sh
 
 Ce script demarre:
 - Frontend Next.js: http://127.0.0.1:3000
-- Backend Symfony: http://127.0.0.1:8000
-- Service FastAPI: http://127.0.0.1:8001
+- Service FastAPI: http://127.0.0.1:8000
 
 Les logs sont ecrits dans `.logs/`.
 
@@ -110,5 +109,5 @@ Le frontend appelle FastAPI via un proxy Next (`/api/fastapi/rag`) pour eviter l
 Si besoin, configure l'URL FastAPI dans `frontend/.env.local`:
 
 ```bash
-NEXT_PUBLIC_FASTAPI_URL=http://127.0.0.1:8001
+NEXT_PUBLIC_FASTAPI_URL=http://127.0.0.1:8000
 ```

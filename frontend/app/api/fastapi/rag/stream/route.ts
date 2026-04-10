@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 const FASTAPI_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL ?? "http://127.0.0.1:8000";
 
 export async function POST(request: NextRequest) {
@@ -11,32 +14,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Question vide." }, { status: 400 });
     }
 
-    console.log(`[API/RAG] Web request: "${query.slice(0, 80)}..."`);
-
-    const upstream = await fetch(`${FASTAPI_BASE_URL}/rag`, {
+    const upstream = await fetch(`${FASTAPI_BASE_URL}/rag/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query, top_k: 5, channel: "web" }),
       cache: "no-store",
     });
 
-    const payload = await upstream.json();
-
     if (!upstream.ok) {
-      console.error(`[API/RAG] FastAPI error:`, payload);
+      const text = await upstream.text();
       return NextResponse.json(
-        {
-          error: payload?.detail ?? payload?.error ?? "Erreur FastAPI.",
-        },
+        { error: text || "Erreur FastAPI." },
         { status: upstream.status }
       );
     }
 
-    console.log(`[API/RAG] Success: ${payload?.sources?.length ?? 0} sources`);
-    return NextResponse.json(payload, { status: 200 });
+    if (!upstream.body) {
+      return NextResponse.json(
+        { error: "Flux FastAPI indisponible." },
+        { status: 502 }
+      );
+    }
+
+    return new Response(upstream.body, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+      },
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erreur inconnue.";
-    console.error(`[API/RAG] Proxy error:`, msg);
     return NextResponse.json(
       { error: `Impossible de contacter FastAPI: ${msg}` },
       { status: 502 }

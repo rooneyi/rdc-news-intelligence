@@ -80,7 +80,7 @@ async def rag_query(payload: RAGRequest):
     channel = getattr(payload, "channel", "web")
     logger.info(f"[RAG] Requête depuis channel={channel}: {payload.query[:80]}")
     
-    result = rag_service.generate_answer_stream(payload.query, payload.top_k)
+    result = rag_service.generate_answer_stream(payload.query, payload.top_k, channel=channel)
     summary = ""
     sources = []
     async for chunk in result:
@@ -133,7 +133,8 @@ async def rag_query_stream(payload: RAGRequest):
     async def event_generator():
         try:
             first = True
-            async for chunk in rag_service.generate_answer_stream(payload.query, payload.top_k):
+            channel = getattr(payload, "channel", "web")
+            async for chunk in rag_service.generate_answer_stream(payload.query, payload.top_k, channel=channel):
                 yield json.dumps(chunk) + "\n"
                 if first:
                     import sys

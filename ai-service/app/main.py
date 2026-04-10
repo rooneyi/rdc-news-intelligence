@@ -28,8 +28,10 @@ async def startup_event():
     if os.getenv("ENABLE_CRON_JOBS", "").lower() in {"1", "true", "yes"}:
         asyncio.create_task(start_cron_jobs())
 
-    # Démarre aussi le polling Telegram (getUpdates) en arrière-plan
-    asyncio.create_task(run_telegram_polling())
+    # Active le polling Telegram uniquement sur demande explicite.
+    # Sinon, si un webhook est déjà branché, on peut rejouer d'anciens messages.
+    if os.getenv("ENABLE_TELEGRAM_POLLING", "").lower() in {"1", "true", "yes"}:
+        asyncio.create_task(run_telegram_polling())
 
 @app.on_event("shutdown")
 def shutdown_event():

@@ -14,7 +14,12 @@ class RAGService:
         self.retrieval_service = RetrievalService()
         self.llm_service = LLMService()
 
-    async def generate_answer_stream(self, query: str, top_k: int = 5) -> AsyncGenerator[dict, None]:
+    async def generate_answer_stream(
+        self,
+        query: str,
+        top_k: int = 5,
+        channel: str = "web",
+    ) -> AsyncGenerator[dict, None]:
         """
         Génère une réponse RAG en streaming réel.
         C'est cette méthode qui permet à Mistral de répondre sans timeout.
@@ -27,7 +32,7 @@ class RAGService:
             if not articles:
                 logger.info("[RAGService] Aucun article trouvé pour la requête. On force l'appel à Mistral avec une liste vide.")
                 # On force l'appel à Mistral même si la liste est vide
-                async for chunk in self.llm_service.summarize_stream(query, []):
+                async for chunk in self.llm_service.summarize_stream(query, [], channel=channel):
                     logger.info(f"[RAGService] Chunk généré (no articles): {chunk[:60]}...")
                     yield {"type": "summary_chunk", "text": chunk}
                 yield {"type": "done"}
@@ -39,7 +44,7 @@ class RAGService:
             yield {"type": "sources", "sources": sources}
 
             # 3. Streamer Mistral mot par mot
-            async for chunk in self.llm_service.summarize_stream(query, articles):
+            async for chunk in self.llm_service.summarize_stream(query, articles, channel=channel):
                 logger.info(f"[RAGService] Chunk généré: {chunk[:60]}...")
                 yield {"type": "summary_chunk", "text": chunk}
 
