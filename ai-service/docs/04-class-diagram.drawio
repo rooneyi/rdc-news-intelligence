@@ -1,0 +1,50 @@
+<mxfile host="Electron" modified="2026-04-10T12:00:00.000Z" agent="Mozilla/5.0" version="21.6.8" type="device">
+  <diagram id="class_diag" name="4. Class Diagram">
+    <mxGraphModel dx="1000" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="cd_0" />
+        <mxCell id="cd_1" parent="cd_0" />
+        
+        <mxCell id="cd_c1" value="ArticleCreate&#10;+ title&#10;+ content&#10;+ link" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;" vertex="1" parent="cd_1">
+          <mxGeometry x="50" y="50" width="120" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cd_c2" value="RAGRequest&#10;+ query&#10;+ top_k" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;" vertex="1" parent="cd_1">
+          <mxGeometry x="50" y="160" width="120" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cd_c3" value="RAGService&#10;+ generate_answer()" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;" vertex="1" parent="cd_1">
+          <mxGeometry x="250" y="160" width="150" height="80" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="cd_c4" value="EmbeddingService&#10;+ generate()" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;" vertex="1" parent="cd_1">
+          <mxGeometry x="500" y="50" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cd_c5" value="RetrievalService&#10;+ get_similar()" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;" vertex="1" parent="cd_1">
+          <mxGeometry x="500" y="140" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cd_c6" value="LLMService&#10;+ generate(prompt)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;" vertex="1" parent="cd_1">
+          <mxGeometry x="500" y="230" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cd_e1" edge="1" parent="cd_1" source="cd_c2" target="cd_c3" style="endArrow=classic;html=1;strokeColor=#000000;fontColor=#000000;dashed=1;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cd_e2" edge="1" parent="cd_1" source="cd_c3" target="cd_c4" style="endArrow=classic;html=1;strokeColor=#000000;fontColor=#000000;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="cd_e3" edge="1" parent="cd_1" source="cd_c3" target="cd_c5" style="endArrow=classic;html=1;strokeColor=#000000;fontColor=#000000;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cd_e4" edge="1" parent="cd_1" source="cd_c3" target="cd_c6" style="endArrow=classic;html=1;strokeColor=#000000;fontColor=#000000;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

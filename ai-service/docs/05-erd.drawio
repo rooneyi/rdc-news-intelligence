@@ -1,0 +1,19 @@
+<mxfile host="65bd71144e">
+    <diagram id="erd_diag" name="5. ERD">
+        <mxGraphModel dx="613" dy="482" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" background="#ffffff" math="0" shadow="0">
+            <root>
+                <mxCell id="erd_0"/>
+                <mxCell id="erd_1" parent="erd_0"/>
+                <mxCell id="tbl_articles" value="ARTICLES&#10;-----------&#10;PK id (int)&#10;title (string)&#10;content (string)&#10;source_id (string)&#10;link (string)&#10;hash (string)&#10;embedding (vector)" style="shape=note;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;size=29;" parent="erd_1" vertex="1">
+                    <mxGeometry x="100" y="100" width="180" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="tbl_training" value="TRAINING_RUNS&#10;-----------&#10;PK id (int)&#10;started_at (datetime)&#10;status (string)&#10;model_name (string)&#10;processed (int)" style="shape=note;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;" parent="erd_1" vertex="1">
+                    <mxGeometry x="430" y="100" width="180" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="rel_1" value="1..N" style="endArrow=none;html=1;strokeColor=#000000;fontColor=#000000;startArrow=diamond;startFill=1;" parent="erd_1" source="tbl_training" target="tbl_articles" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

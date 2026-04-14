@@ -75,23 +75,173 @@ Note technique: si la prévisualisation Markdown de VS Code clignote ou masque l
 
 ### 3.6.1. Diagramme de cas d'utilisation
 
-![Diagramme de cas d'utilisation](diagrams/01-use-cases.svg)
+```mermaid
+flowchart LR
+    U[Utilisateur]
+    A[Administrateur]
+
+    subgraph S[RDC_News_Intelligence]
+        UC1[Consulter_reponse_RAG]
+        UC2[Verifier_image_rumeur]
+        UC3[Rechercher_articles_similaires]
+        UC4[Lancer_crawl]
+        UC5[Indexer_articles]
+    end
+
+    U --> UC1
+    U --> UC2
+    U --> UC3
+    A --> UC4
+    A --> UC5
+    UC1 --> UC3
+    UC2 --> UC1
+```
 
 ### 3.6.2. Séquence de déploiement et de démarrage
 
-![Séquence de déploiement](diagrams/02-deployment-sequence.svg)
+```mermaid
+sequenceDiagram
+    actor Admin
+    participant API as FastAPI
+    participant DB as PostgreSQL
+    participant TG as TelegramPolling
+    participant CR as Crawler
+    participant WA as WhatsAppWebhook
+
+    Admin->>API: Demarrer_service
+    API->>DB: Init_tables_pgvector
+    API->>TG: Start_polling
+    API->>CR: Prepare_ingestion
+    API->>WA: Expose_webhook
+    CR-->>API: JSONL_ready
+    API->>DB: Insert_articles_embeddings
+    DB-->>API: System_ready
+```
 
 ### 3.6.3. Séquence d'une requête RAG
 
-![Séquence RAG](diagrams/03-rag-sequence.svg)
+```mermaid
+sequenceDiagram
+    actor User
+    participant CH as Channel
+    participant API as FastAPI
+    participant EMB as EmbeddingService
+    participant RET as RetrievalService
+    participant DB as PostgreSQL
+    participant RAG as RAGService
+    participant LLM as Ollama
+
+    User->>CH: Envoyer_question
+    CH->>API: POST_rag
+    API->>EMB: Encode_query
+    EMB-->>API: Query_vector
+    API->>RET: Search_similar
+    RET->>DB: Query_top_k
+    DB-->>RET: Articles
+    RET-->>RAG: Context
+    RAG->>LLM: Generate_answer
+    LLM-->>API: Answer
+    API-->>CH: Answer_plus_sources
+```
 
 ### 3.6.4. Diagramme de classes
 
-![Diagramme de classes](diagrams/04-class-diagram.svg)
+```mermaid
+classDiagram
+    class ArticleCreate {
+        +title string
+        +content string
+        +link string
+        +source_id string
+        +hash string
+    }
+
+    class ArticleOut {
+        +id int
+        +title string
+        +content string
+        +similarity float
+    }
+
+    class RAGRequest {
+        +query string
+        +top_k int
+        +min_score float
+    }
+
+    class RAGResponse {
+        +query string
+        +summary string
+        +num_sources int
+    }
+
+    class ArticleService {
+        +create_article()
+        +save_crawled_article()
+        +search_similar()
+    }
+
+    class EmbeddingService {
+        +generate(text)
+    }
+
+    class RetrievalService {
+        +get_similar_articles(vector, top_k)
+    }
+
+    class RAGService {
+        +generate_answer_stream(query, top_k)
+        +generate_full_answer(query, channel)
+    }
+
+    class LLMService {
+        +generate(prompt)
+    }
+
+    class OCRService {
+        +extract_text(image_bytes)
+    }
+
+    ArticleService --> EmbeddingService
+    RAGService --> EmbeddingService
+    RAGService --> RetrievalService
+    RAGService --> LLMService
+    RAGService --> OCRService
+    RAGRequest --> RAGService
+    RAGService --> RAGResponse
+```
 
 ### 3.6.5. Schéma de la base de données
 
-![Schéma de la base de données](diagrams/05-erd.svg)
+```mermaid
+erDiagram
+    ARTICLES {
+        int id PK
+        string title
+        string content
+        string source_id
+        string link
+        string hash
+        string categories
+        string image
+        string embedding
+        datetime created_at
+    }
+
+    TRAINING_RUNS {
+        int id PK
+        datetime started_at
+        datetime ended_at
+        string status
+        string model_name
+        int processed_count
+        int reembedded_count
+        string note
+        datetime created_at
+    }
+
+    TRAINING_RUNS ||--o{ ARTICLES : reembedding_updates
+```
 
 ## 3.7. Justification des choix d'architecture
 
