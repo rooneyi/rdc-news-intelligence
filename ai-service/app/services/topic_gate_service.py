@@ -2,10 +2,13 @@ import json
 import logging
 import os
 import re
+import time
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass
 
 import httpx
+from app.db.session import get_db_connection
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +66,132 @@ THEME_KEYWORDS = {
     ],
 }
 
+COMMON_STOPWORDS = {
+    "alors",
+    "au",
+    "aucun",
+    "aussi",
+    "autre",
+    "avant",
+    "avec",
+    "avoir",
+    "bon",
+    "car",
+    "ce",
+    "cela",
+    "ces",
+    "ceux",
+    "chaque",
+    "ci",
+    "comme",
+    "comment",
+    "dans",
+    "des",
+    "du",
+    "dedans",
+    "dehors",
+    "depuis",
+    "devrait",
+    "doit",
+    "donc",
+    "dos",
+    "droite",
+    "debut",
+    "elle",
+    "elles",
+    "en",
+    "encore",
+    "essai",
+    "est",
+    "et",
+    "eu",
+    "fait",
+    "faites",
+    "fois",
+    "font",
+    "hors",
+    "ici",
+    "il",
+    "ils",
+    "je",
+    "juste",
+    "la",
+    "le",
+    "les",
+    "leur",
+    "là",
+    "ma",
+    "maintenant",
+    "mais",
+    "mes",
+    "mine",
+    "moins",
+    "mon",
+    "mot",
+    "meme",
+    "ni",
+    "nommes",
+    "notre",
+    "nous",
+    "nouveaux",
+    "ou",
+    "où",
+    "par",
+    "parce",
+    "parole",
+    "pas",
+    "personnes",
+    "peut",
+    "peu",
+    "piece",
+    "plupart",
+    "pour",
+    "pourquoi",
+    "quand",
+    "que",
+    "quel",
+    "quelle",
+    "quelles",
+    "quels",
+    "qui",
+    "sa",
+    "sans",
+    "ses",
+    "seulement",
+    "si",
+    "sien",
+    "son",
+    "sont",
+    "sous",
+    "soyez",
+    "sujet",
+    "sur",
+    "ta",
+    "tandis",
+    "tellement",
+    "tels",
+    "tes",
+    "ton",
+    "tous",
+    "tout",
+    "trop",
+    "tres",
+    "tu",
+    "valeur",
+    "voie",
+    "voient",
+    "vont",
+    "votre",
+    "vous",
+    "vu",
+    "ça",
+    "etaient",
+    "etat",
+    "etions",
+    "ete",
+    "etre",
+}
+
 
 @dataclass(frozen=True)
 class TopicDecision:
@@ -91,6 +220,15 @@ class TopicGateService:
         self.host = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
         self.timeout = float(os.getenv("TOPIC_GATE_TIMEOUT", "45"))
         self.min_confidence = float(os.getenv("TOPIC_GATE_MIN_CONFIDENCE", "0.6"))
+        self.keyword_mode = os.getenv("TOPIC_GATE_KEYWORD_MODE", "hybrid").lower()
+        self.dynamic_keywords_enabled = os.getenv("TOPIC_GATE_DYNAMIC_KEYWORDS", "true").lower() in {"1", "true", "yes"}
+        self.dynamic_refresh_seconds = int(os.getenv("TOPIC_GATE_DYNAMIC_REFRESH_SECONDS", "900"))
+        self.dynamic_scan_limit = int(os.getenv("TOPIC_GATE_DYNAMIC_SCAN_LIMIT", "2500"))
+        self.dynamic_top_per_theme = int(os.getenv("TOPIC_GATE_DYNAMIC_TOP_PER_THEME", "25"))
+        self.dynamic_min_frequency = int(os.getenv("TOPIC_GATE_DYNAMIC_MIN_FREQUENCY", "4"))
+        self.dynamic_min_word_len = int(os.getenv("TOPIC_GATE_DYNAMIC_MIN_WORD_LEN", "4"))
+        self._dynamic_keywords_by_theme: dict[str, list[str]] = {theme: [] for theme in THEME_KEYWORDS}
+        self._last_dynamic_refresh = 0.0
 
     def is_group_chat(self, chat_type: str | None) -> bool:
         return (chat_type or "").lower() in GROUP_CHAT_TYPES
@@ -137,6 +275,10 @@ class TopicGateService:
         if not cleaned_text:
             return TopicDecision(False, None, 0.0, "empty_text")
 
+        keyword_decision = self._keyword_fallback(cleaned_text, reason="keywords_first")
+        if self.keyword_mode == "keywords-first" and keyword_decision.should_activate:
+            return keyword_decision
+
         prompt = (
             "Tu es un classifieur binaire très strict pour un bot de veille en RDC. "
             "Analyse le message et réponds uniquement avec un JSON valide, sans texte autour. "
@@ -165,7 +307,14 @@ class TopicGateService:
 
             payload = response.json()
             raw_text = str(payload.get("response", "")).strip()
-            return self._parse_model_response(raw_text, cleaned_text)
+            decision = self._parse_model_response(raw_text, cleaned_text)
+            if decision.should_activate:
+                return decision
+
+            if self.keyword_mode in {"hybrid", "keywords-first"} and keyword_decision.should_activate:
+                return keyword_decision
+
+            return decision
         except Exception as exc:  # noqa: BLE001
             logger.error("[TopicGate] Erreur de classification IA: %s", exc)
             return self._keyword_fallback(cleaned_text, reason=str(exc))
@@ -201,7 +350,11 @@ class TopicGateService:
 
     def _keyword_fallback(self, cleaned_text: str, reason: str) -> TopicDecision:
         normalized = strip_accents(cleaned_text.lower())
-        for theme, keywords in THEME_KEYWORDS.items():
+        self._refresh_dynamic_keywords_if_needed()
+
+        for theme, static_keywords in THEME_KEYWORDS.items():
+            dynamic_keywords = self._dynamic_keywords_by_theme.get(theme, [])
+            keywords = [*static_keywords, *dynamic_keywords]
             for keyword in keywords:
                 if strip_accents(keyword.lower()) in normalized:
                     canonical_theme = self._normalize_theme(theme)
@@ -249,3 +402,95 @@ class TopicGateService:
             return match.group(0)
 
         return None
+
+    def _refresh_dynamic_keywords_if_needed(self) -> None:
+        if not self.dynamic_keywords_enabled:
+            return
+
+        now = time.time()
+        if now - self._last_dynamic_refresh < self.dynamic_refresh_seconds:
+            return
+
+        self._last_dynamic_refresh = now
+        self._dynamic_keywords_by_theme = self._load_dynamic_keywords_from_db()
+
+    def _load_dynamic_keywords_from_db(self) -> dict[str, list[str]]:
+        result: dict[str, list[str]] = {theme: [] for theme in THEME_KEYWORDS}
+
+        conn = None
+        cursor = None
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT COALESCE(title, ''), COALESCE(content, '')
+                FROM articles
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (self.dynamic_scan_limit,),
+            )
+            rows = cursor.fetchall()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[TopicGate] Impossible de charger les mots-clés dynamiques: %s", exc)
+            return result
+        finally:
+            if cursor is not None:
+                cursor.close()
+            if conn is not None:
+                conn.close()
+
+        if not rows:
+            return result
+
+        counters: dict[str, Counter] = {theme: Counter() for theme in THEME_KEYWORDS}
+        normalized_seed_by_theme = {
+            theme: [strip_accents(keyword.lower()) for keyword in keywords]
+            for theme, keywords in THEME_KEYWORDS.items()
+        }
+
+        for title, content in rows:
+            merged = normalize_text(f"{title} {content}")
+            if not merged:
+                continue
+
+            normalized_text = strip_accents(merged.lower())
+            tokens = self._extract_tokens(normalized_text)
+            if not tokens:
+                continue
+
+            matched_themes: set[str] = set()
+            for theme, seeds in normalized_seed_by_theme.items():
+                if any(seed in normalized_text for seed in seeds):
+                    matched_themes.add(theme)
+
+            for theme in matched_themes:
+                counters[theme].update(tokens)
+
+        for theme, counter in counters.items():
+            seeds = set(normalized_seed_by_theme[theme])
+            selected: list[str] = []
+            for word, frequency in counter.most_common(self.dynamic_top_per_theme * 6):
+                if frequency < self.dynamic_min_frequency:
+                    continue
+                if word in COMMON_STOPWORDS:
+                    continue
+                if word in seeds:
+                    continue
+                if len(word) < self.dynamic_min_word_len:
+                    continue
+                selected.append(word)
+                if len(selected) >= self.dynamic_top_per_theme:
+                    break
+            result[theme] = selected
+
+        logger.info(
+            "[TopicGate] Mots-clés dynamiques chargés: %s",
+            {theme: len(words) for theme, words in result.items()},
+        )
+        return result
+
+    def _extract_tokens(self, text: str) -> list[str]:
+        tokens = re.findall(r"[a-zA-Z]{2,}", text)
+        return [token.lower() for token in tokens]
