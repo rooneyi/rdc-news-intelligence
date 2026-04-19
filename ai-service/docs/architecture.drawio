@@ -1,60 +1,67 @@
-<mxfile host="Electron" modified="2026-04-10T12:00:00.000Z" agent="Mozilla/5.0" version="21.6.8" type="device">
-  <diagram id="rag-architecture" name="Architecture RAG">
-    <mxGraphModel dx="1000" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+<mxfile host="Electron" modified="2026-04-19T12:00:00.000Z" agent="Mozilla/5.0" version="21.6.8" type="device">
+  <diagram id="rag-architecture" name="High-Level Architecture">
+    <mxGraphModel dx="1200" dy="800" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" background="#ffffff" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
         
-        <mxCell id="user" value="Utilisateur&#10;(Telegram / WhatsApp)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="1">
-          <mxGeometry x="50" y="250" width="40" height="80" as="geometry" />
+        <mxCell id="layer_channels" value="CANAUX D'ACCÈS" style="swimlane;whiteSpace=wrap;html=1;startSize=30;fillColor=#ffffff;fontColor=#000000;strokeColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="220" height="580" as="geometry" />
+        </mxCell>
+        <mxCell id="user_web" value="Interface Web&#10;(React/Vue)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="layer_channels">
+          <mxGeometry x="30" y="60" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="user_wa" value="WhatsApp&#10;(Meta Cloud API)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="layer_channels">
+          <mxGeometry x="30" y="160" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="user_tg" value="Telegram Bot&#10;(Webhook)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="layer_channels">
+          <mxGeometry x="30" y="260" width="160" height="60" as="geometry" />
         </mxCell>
 
-        <mxCell id="api" value="FastAPI&#10;(Backend RAG)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="250" y="260" width="120" height="60" as="geometry" />
+        <mxCell id="layer_logic" value="MOTEUR INTELLIGENT (FastAPI)" style="swimlane;whiteSpace=wrap;html=1;startSize=30;fillColor=#ffffff;fontColor=#000000;strokeColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="80" width="340" height="580" as="geometry" />
+        </mxCell>
+        <mxCell id="webhook_mgr" value="Gestionnaire de Webhooks&#10;&amp; Déclencheurs (Triggers)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;fontStyle=1" vertex="1" parent="layer_logic">
+          <mxGeometry x="40" y="60" width="260" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="classifier" value="Classifieur Thématique&#10;(LLM Keyword Filter)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="layer_logic">
+          <mxGeometry x="40" y="150" width="260" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="rag_engine" value="Moteur RAG&#10;(Génération Augmentée)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;fontStyle=1" vertex="1" parent="layer_logic">
+          <mxGeometry x="40" y="300" width="260" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="ocr_vision" value="Service Vision / OCR&#10;(Tesseract/Paddle)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="layer_logic">
+          <mxGeometry x="40" y="450" width="260" height="60" as="geometry" />
         </mxCell>
 
-        <mxCell id="db" value="PostgreSQL&#10;+ pgvector" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="500" y="150" width="100" height="80" as="geometry" />
+        <mxCell id="layer_data" value="INFRASTRUCTURE" style="swimlane;whiteSpace=wrap;html=1;startSize=30;fillColor=#ffffff;fontColor=#000000;strokeColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="880" y="80" width="240" height="580" as="geometry" />
+        </mxCell>
+        <mxCell id="pgvector" value="PostgreSQL&#10;+ pgvector Extension" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;fontStyle=1" vertex="1" parent="layer_data">
+          <mxGeometry x="40" y="60" width="160" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="llm_model" value="LLM Local&#10;(Mistral-7B via Ollama)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;fontColor=#000000;strokeColor=#000000;" vertex="1" parent="layer_data">
+          <mxGeometry x="40" y="240" width="160" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="crawler_sync" value="Crawler Automatisé&#10;(Tâche CRON / Scheduler)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="layer_data">
+          <mxGeometry x="40" y="440" width="160" height="80" as="geometry" />
         </mxCell>
 
-        <mxCell id="llm" value="Ollama&#10;(LLM Local)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="500" y="350" width="120" height="60" as="geometry" />
-        </mxCell>
-
-        <mxCell id="crawler" value="Crawler&#10;(Sources d'info RDC)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="750" y="160" width="120" height="60" as="geometry" />
-        </mxCell>
-
-        <mxCell id="edge1" value="1. Requête" style="endArrow=classic;html=1;rounded=0;strokeColor=#000000;fontColor=#000000;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="user" target="api">
+        <mxCell id="edge1" value="Flux Web/Messagerie" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="layer_channels" target="webhook_mgr">
           <mxGeometry width="50" height="50" relative="1" as="geometry" />
         </mxCell>
-
-        <mxCell id="edge2" value="2. Recherche Sémantique" style="endArrow=classic;html=1;rounded=0;strokeColor=#000000;fontColor=#000000;entryX=0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="api" target="db">
+        <mxCell id="edge2" value="Vector Search" style="endArrow=classic;html=1;rounded=0;strokeColor=#000000;fontColor=#000000;entryX=0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="rag_engine" target="pgvector">
           <mxGeometry width="50" height="50" relative="1" as="geometry" />
         </mxCell>
-
-        <mxCell id="edge3" value="3. Contexte" style="endArrow=classic;html=1;rounded=0;strokeColor=#000000;fontColor=#000000;dashed=1;exitX=0;exitY=0.75;exitDx=0;exitDy=0;exitPerimeter=0;" edge="1" parent="1" source="db" target="api">
-          <mxGeometry width="50" height="50" relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="edge4" value="4. Prompt + Contexte" style="endArrow=classic;html=1;rounded=0;strokeColor=#000000;fontColor=#000000;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="api" target="llm">
-          <mxGeometry width="50" height="50" relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="edge5" value="5. Réponse générée" style="endArrow=classic;html=1;rounded=0;strokeColor=#000000;fontColor=#000000;dashed=1;exitX=0.25;exitY=0;exitDx=0;exitDy=0;" edge="1" parent="1" source="llm" target="api">
-          <mxGeometry width="50" height="50" relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="edge6" value="6. Synthèse finale" style="endArrow=classic;html=1;rounded=0;strokeColor=#000000;fontColor=#000000;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="api" target="user">
+        <mxCell id="edge3" value="Génération" style="endArrow=classic;html=1;rounded=0;strokeColor=#000000;fontColor=#000000;entryX=0.5;entryY=1;entryDx=0;entryDy=0;exitX=1;exitY=0.75;exitDx=0;exitDy=0;" edge="1" parent="1" source="rag_engine" target="llm_model">
           <mxGeometry width="50" height="50" relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="310" y="400" />
-              <mxPoint x="70" y="400" />
+              <mxPoint x="800" y="470" />
+              <mxPoint x="960" y="470" />
             </Array>
           </mxGeometry>
         </mxCell>
-
-        <mxCell id="edge7" value="Ingestion périodique" style="endArrow=classic;html=1;rounded=0;strokeColor=#000000;fontColor=#000000;entryX=1;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="crawler" target="db">
+        <mxCell id="edge4" value="Mise à jour" style="endArrow=classic;html=1;rounded=0;strokeColor=#000000;fontColor=#000000;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="crawler_sync" target="pgvector">
           <mxGeometry width="50" height="50" relative="1" as="geometry" />
         </mxCell>
 

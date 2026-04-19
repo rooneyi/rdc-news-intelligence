@@ -24,7 +24,43 @@ Les services métiers encapsulent la logique importante du système. Le service 
 
 ## 4.4. Flux d'exécution principaux
 
-Le premier flux est celui de la requête textuelle. Lorsqu'un utilisateur envoie une question, le texte est d'abord soumis au contrôle thématique si le message provient d'un groupe identifiable. Si le contenu est jugé pertinent, ou si la conversation est privée, le texte est vectorisé, les articles les plus proches sont récupérés, puis le modèle génératif synthétise une réponse structurée. Ce processus constitue le cœur fonctionnel du système et correspond au cas d'usage principal du projet.
+Les flux d'exécution décrivent le parcours de l'information à travers les différentes couches logiques du système. Cette section détaille comment chaque requête est orchestrée pour garantir une réponse fiable et rapide.
+
+**Type de diagramme :** Diagramme de Séquence UML (Synthèse Globale du Flux)
+**Description exhaustive :** Ce diagramme de séquence synthétise l'ensemble du cycle de vie d'un message entrant. Il illustre la robustesse de l'orchestration interne de FastAPI :
+1. **Réception** : Le message est capté par la passerelle de Webhooks.
+2. **Filtrage Intelligent** : Si le message provient d'un groupe, la logique de classification (Trigger logic) analyse si le contenu mérite une intervention. Cela permet de préserver la bande passante et d'éviter les réponses hors-contexte.
+3. **Recherche Sémantique** : Une fois la requête validée, le système interroge la base PostgreSQL (`pgvector`) pour extraire des faits tangibles.
+4. **Génération Contextualisée** : Le moteur RAG utilise Mistral-7B pour fusionner la question et les faits trouvés dans une réponse synthétique unique.
+5. **Restitution** : La réponse finale est publiée sur le canal d'origine avec ses preuves, fermant ainsi la boucle de vérification.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Utilisateur (Web/Group)
+    participant WG as FastAPI Webhook Gateway
+    participant Class as Classification (Trigger logic)
+    participant DB as VectorDB (PostgreSQL)
+    participant RAG as RAG Generator (Mistral)
+
+    User->>WG: Message / Question (Texte/Image)
+    
+    alt Si Groupe
+        WG->>Class: Analyser Trigger @NewsBot
+        Class-->>WG: Indique si thématique pertinente (Pol/Santé)
+    end
+    
+    opt Requête validée (Directe ou Triggered)
+        WG->>DB: Recherche sémantique (Embeddings)
+        DB-->>WG: Contexte documenté (Facts)
+        WG->>RAG: Synthèse Fact-Checking + Sources
+        RAG-->>WG: Résultat RAG structuré (Verdict)
+        WG-->>User: Correction publiée avec Preuves/Links
+    end
+```
+
+### 4.4.1. Le parcours de la requête textuelle
+Le premier flux, et le plus commun, est celui de la requête textuelle pure. Lorsqu'un utilisateur pose une question (via le web ou une mention bot), le système procède d'abord à un nettoyage du texte (normalisation). Si le contrôle thématique autorise le déclenchement, le texte est alors "vectorisé" par le service d'embedding. Ce vecteur devient la clé de recherche dans la base de données. Les articles les plus sémantiquement proches sont alors extraits pour servir de "mémoire contextuelle" à l'IA générative. Ce processus assure que la réponse n'est pas une simple invention de l'IA (hallucination) mais une synthèse de faits réels.
 
 Le deuxième flux concerne les images. Le message contenant une image est reçu, le fichier est téléchargé, puis le texte est extrait par OCR. Lorsqu'une légende est présente, elle est fusionnée avec le résultat OCR afin de nourrir le filtre thématique. Le contenu obtenu rejoint ensuite la même chaîne de recherche et de génération que les requêtes textuelles si le message est accepté. Cette capacité est essentielle pour traiter les contenus partagés dans les messageries tout en évitant d'activer le bot sur des images hors sujet dans les groupes identifiables.
 

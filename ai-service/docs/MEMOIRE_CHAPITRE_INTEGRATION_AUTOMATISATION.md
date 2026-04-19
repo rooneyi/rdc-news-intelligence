@@ -55,39 +55,44 @@ Tout cela **sans nécessiter de ré-entraîner** le modèle génératif Mistral 
 
 ---
 
-## 2. Connectivité et Distribution via API (Webhooks)
+## 2. Connectivité, Webhooks et Cas d'Utilisation
 
-L'accessibilité technologique de l'utilisateur congolais passe davantage par les messageries instantanées que par les interfaces webs traditionnelles. 
+L'accessibilité technologique de l'utilisateur congolais passe davantage par les messageries instantanées que par les interfaces webs traditionnelles. L'architecture a été pensée autour de deux cas d'utilisation (Use Cases) principaux pour maximiser l'impact contre la désinformation.
 
-### 2.1 Microservices de Réception (Webhooks)
-Nous avons mis en place un routeur FastAPI dédié (« /webhooks ») doté de tâches d'arrière-plan (`BackgroundTasks`) pour traiter des forts flux de messages :
-- **L'intégration WhatsApp (Meta Cloud API) :** Le service comprend une vérification biométrique Meta (hub verify challenge) pour sécuriser l'envoi vers un numéro d'entreprise.
-- **L'intégration Telegram :** Le service accepte les structures JSON de l'API BotFather.
+### 2.1 Diagramme des Cas d'Utilisation : Le flux utilisateur
+
+**Cas d'utilisation 1 : Vérification contextuelle dans les Groupes (WhatsApp / Telegram)**
+L'utilisateur final se trouve dans une discussion de groupe où circulent de nombreuses informations (souvent sources d'infobésité ou de fakes news). 
+- Le système n'intervient pas systématiquement pour ne pas polluer la discussion. 
+- Il fonctionne sur **déclencheur (Trigger)** : lorsqu'une information douteuse est partagée, un membre du groupe mentionne le bot (ex: *@NewsBot vérifie* ou *?*). 
+- L'information ciblée est transmise via notre Webhook (FastAPI) vers le composant RAG.
+- Le RAG effectue une recherche vectorielle dans les articles locaux préalablement crawlés, puis le modèle d'IA génère et renvoie le fact-checking **directement dans le groupe**.
+
+**Cas d'utilisation 2 : Interaction directe via l'Interface Web**
+L'utilisateur, tel qu'un journaliste ou un étudiant, se rend sur l'application Web de RDC News Intelligence. 
+- Point de besoin de déclencheur ici : la question est posée directement dans le champ de recherche.
+- La requête attaque directement l'endpoint API REST standard. Le système RAG opère exactement de la même manière et fournit une réponse sourcée et détaillée sur l'interface.
 
 ### 2.2 Processus de Fact-Checking Augmenté
-Grâce au canal identifié, le comportement du RAG s'adapte. Au lieu de simples résumés sémantiques, le prompt côté LLM Service (`llm_service.py`) a été spécialisé (« Fact-Checker Journalist »). 
-Le modèle RAG récupère l'information liée à la discussion, mais il lui est imposé une architecture de réponse militaire, évitant l'hallucination, scindée en trois blocs :
+Grâce au canal identifié, le comportement du LLM s'adapte via le `llm_service.py`. Le modèle récupère l'information liée à la discussion de groupe ou du Web, et il lui est imposé une architecture de réponse militaire scindée en trois blocs :
 - **🚨 VÉRIFICATION :** Déclaration explicite et binaire (Vrai, Faux, ou Imprécis).
 - **📝 EXPLICATION :** Contextualisation courte à l'attention d'un lecteur sur mobile.
-- **🔗 SOURCES :** L'accès direct aux articles officiels qui ont participé à la prise de décision du modèle.
+- **🔗 SOURCES :** L'accès direct aux articles officiels stockés en base.
 
-Cela crée une véritable valeur ajoutée métier : le bot n'est pas vu seulement comme une encyclopédie, mais comme un assistant de confiance pour mitiger l'infobésité sur les réseaux sociaux.
+---
 
-### 2.3 Chaîne complète « de la collecte à la recommandation »
+## 3. Apport du Système face aux IA existantes (Perplexity, ChatGPT)
 
-L'intégration multicanale (web, Telegram, WhatsApp) s'appuie sur une chaîne technique continue entre la collecte des informations et la génération de recommandations utiles pour l'utilisateur final :
+Il est légitime de se demander pourquoi déployer une architecture RAG dédiée alors que des géants comme ChatGPT (OpenAI) ou Perplexity AI existent déjà sur le marché.
 
-1. **Collecte et indexation**  
-	Le crawler récupère les derniers articles, qui sont vectorisés et indexés dans la base `articles`. À ce stade, le moteur de recommandation dispose des informations les plus récentes.
+### 3.1 La limitation des IA Généralistes (ChatGPT)
+ChatGPT s'appuie sur une base de connaissances figée issue de l'internet mondial et a tendance à **halluciner** les faits locaux. Lorsqu'interrogé sur des mouvements politiques subtils à Kinshasa ou des incidents très récents à l'Est de la RDC, un modèle généraliste manque cruellement de données primaires spécifiques congolaises et va générer une réponse plausible mais potentiellement factuellement inexacte.
 
-2. **Réception de la demande via webhook ou polling**  
-	- Sur Telegram, la demande transite soit par le webhook, soit par un mécanisme de polling intégré directement à l'application FastAPI.  
-	- Sur WhatsApp, la demande est transmise par la plateforme Meta via un webhook HTTPS pointant vers le microservice.
+### 3.2 La limitation des Moteurs de Recherche Augmentés (Perplexity)
+Perplexity AI contourne l'obsolescence en cherchant sur le web en temps réel. Cependant, il **ne filtre pas l'infobésité par la source locale**. Perplexity peut très bien utiliser comme source de vérité un blog partisan, une dépêche étrangère biaisée ou un site non reconnu par la corporation journalistique congolaise, propageant ainsi la désinformation sous une apparence de légitimité.
 
-3. **Sélection des articles pertinents**  
-	La question est encodée, puis comparée à l'ensemble des embeddings stockés. Les `top_k` articles les plus proches sont sélectionnés : c'est la phase de recommandation proprement dite.
-
-4. **Génération contrôlée de la réponse**  
-	Les articles recommandés sont transmis au modèle Mistral, encapsulés dans un prompt spécialisé de fact-checking. Le LLM doit alors produire une réponse structurée (VÉRIFICATION, EXPLICATION, SOURCES) en s'appuyant uniquement sur les documents recommandés.
-
-Cette chaîne illustre le lien direct entre le flux de collecte (crawler), la base vectorielle (pgvector) et le comportement observé par l'utilisateur final dans les applications de messagerie.
+### 3.3 La valeur ajoutée de "RDC News Intelligence"
+Notre système se distingue par sa **restriction volontaire de la connaissance (Corpus Clos)** :
+1. **Hyper-Localisation et Fiabilité :** Le RAG ne s'abreuve **que** d'une base de données d'articles de presse officiels congolais (RadioOkapi, Actualité.cd, etc.) préalablement validés et moissonnés par notre propre Crawler. 
+2. **Action au cœur du problème (WhatsApp) :** Contrairement à Perplexity ou ChatGPT qui demandent à l'utilisateur de quitter sa plateforme, notre système s'intègre au cœur des groupes WhatsApp/Telegram en RDC, là où la fausse information naît et se propage. 
+3. **Impartialité mathématique :** Le modèle d'intelligence artificielle est "bridé" par le prompt pour ne jamais inventer de réponse. Si la base de données RDC ne contient aucune information sur la rumeur, l'IA répondra humblement "Non Vérifiable", bloquant ainsi la chaîne de propagation des fakes news.

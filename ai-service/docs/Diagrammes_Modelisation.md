@@ -18,38 +18,38 @@ Ce diagramme présente les interactions globales entre les acteurs et le systèm
 usecaseDiagram
 direction LR
 
-actor "Utilisateur (WhatsApp/Telegram)" as User
-actor "Administrateur / Planificateur (CRON)" as Admin
+actor "Utilisateur Web" as UserWeb
+actor "Utilisateur Messagerie (Groupes)" as UserMsg
+actor "Admin / Planificateur (CRON)" as Admin
 actor "Sources d'actualité (Web/RSS)" as Sources
 
-rectangle "Système de Recommandation et Vérification" {
-    usecase "Envoyer un message ou statut (Texte/Image)" as UC1
-    usecase "Intercepter et Analyser l'information" as UC2
-    usecase "Classifier le thème (Politique, Santé, Sport)" as UC3
-    usecase "Vérifier la véracité via Vector DB" as UC4
-    usecase "Générer un résumé pertinent (RAG)" as UC5
-    usecase "Répondre avec verdict et sources" as UC6
+rectangle "RDC News Intelligence (Moteur RAG)" {
+    usecase "Poser une question directe" as UC1
+    usecase "Déclencher vérification (@NewsBot / Trigger)" as UC2
+    usecase "Fact-Checking via RAG (Contexte Vectoriel)" as UC3
+    usecase "Générer réponse structurée (Vrai/Faux + Sources)" as UC4
     
-    usecase "Crawler les informations" as UC7
-    usecase "Vectoriser les données (Embedding)" as UC8
-    usecase "Mettre à jour la Base de Connaissances" as UC9
+    usecase "Crawler & Collecter l'actualité" as UC7
+    usecase "Vectorisation automatique (Embedding)" as UC8
+    usecase "Mise à jour de la Base (Continuous Learning)" as UC9
 }
 
-User --> UC1
-User <-- UC6 : Reçoit la réponse argumentée
+UserWeb --> UC1
+UserMsg --> UC2 : Optionnel (Trigger-based)
 
-UC1 ..> UC2 : inclut
-UC2 ..> UC3 : inclut
-UC3 ..> UC4 : si thème du domaine (Polit., Santé, Sport)
-UC4 ..> UC5 : inclut
-UC5 ..> UC6 : inclut
+UC1 ..> UC3 : include
+UC2 ..> UC3 : include
+UC3 ..> UC4 : include
+
+UserWeb <-- UC4 : Réponse complète
+UserMsg <-- UC4 : Verdict + Sources
 
 Admin --> UC7
-UC7 --> Sources : Collecte des faits
-UC7 ..> UC8 : inclut
-UC8 ..> UC9 : inclut
+UC7 --> Sources : Collecte
+UC7 ..> UC8 : include
+UC8 ..> UC9 : include
 
-UC4 --> UC9 : Consulte la base
+UC3 --> UC9 : Recherche sémantique
 ```
 
 ---
@@ -145,21 +145,24 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    actor User as Utilisateur 
-    participant WG as Webhook Gateway
-    participant Class as Classification Service
-    participant DB as Vector Knowledge Base
-    participant RAG as Génération RAG Service
+    actor User as Utilisateur (Web/Group)
+    participant WG as FastAPI Webhook Gateway
+    participant Class as Classification (Trigger logic)
+    participant DB as VectorDB (PostgreSQL)
+    participant RAG as RAG Generator (Mistral)
 
-    User->>WG: Envoie un contenu potentiellement faux
-    WG->>Class: Analyser et classifier (Texte ou OCR)
-    Class-->>WG: Indique "Politique / Santé / Sport"
+    User->>WG: Message / Question (Texte/Image)
     
-    opt Theme pertinent
-        WG->>DB: Interroger la vérité (Recherche sémantique)
-        DB-->>WG: Fournir contexte et origines fiables
-        WG->>RAG: Synthétiser "Fait" vs "Désinformation"
-        RAG-->>WG: Résultat RAG généré
-        WG-->>User: Publier la correction et les preuves (sources)
+    alt Si Groupe
+        WG->>Class: Analyser Trigger @NewsBot
+        Class-->>WG: Indique si thématique pertinente (Pol/Santé)
+    end
+    
+    opt Requête validée (Directe ou Triggered)
+        WG->>DB: Recherche sémantique (Embeddings)
+        DB-->>WG: Contexte documenté (Facts)
+        WG->>RAG: Synthèse Fact-Checking + Sources
+        RAG-->>WG: Résultat RAG structuré (Verdict)
+        WG-->>User: Correction publiée avec Preuves/Links
     end
 ```

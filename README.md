@@ -1,113 +1,57 @@
-# RDC RAG News Platform
+# RDC News Intelligence
 
-An intelligent news aggregation and semantic recommendation platform designed to reduce information overload and mitigate misinformation in the Democratic Republic of Congo (RDC).
+Une plateforme intelligente d'agrégation d'actualités et de recommandation sémantique conçue pour réduire la surcharge d'information et lutter contre la désinformation en République Démocratique du Congo (RDC).
 
 ---
 
-## Tech Stack
+## Technologies utilisées
 
-### Backend
-- Symfony 7+
-- Doctrine ORM
-- PostgreSQL + pgvector
+### Backend & API
+- **FastAPI (Python)** : Moteur principal de traitement IA et Webhooks.
+- **PostgreSQL + pgvector** : Base de données relationnelle et vectorielle.
+- **Mistral-7B (Ollama)** : Modèle de langage local pour le RAG.
 
 ### Frontend
-- Next.js 15
-- React
-- TailwindCSS
-
-### AI Service
-- Python
-- HuggingFace Transformers
-- Sentence Embeddings (1024-dim)
-- Retrieval-Augmented Generation (RAG)
+- **Next.js 15 & React** : Interface utilisateur moderne.
+- **TailwindCSS** : Design premium et réactif (bleu nuit, bleu clair, blanc).
 
 ---
 
-##  System Architecture
+## Architecture du Système
 
-The platform is composed of three main layers:
-
-1. Symfony API (Core Business Logic)
-2. Next.js Frontend (User Interface)
-3. Python AI Microservice (Semantic Processing)
-
----
-
-##  Processing Pipeline
-
-### Article Ingestion
-
-1. Article stored via Symfony
-2. Symfony triggers AI service
-3. Article is chunked (500 chars)
-4. Embeddings generated
-5. Similarity computed
-6. Story updated or created
+Le système est piloté par des événements et des messages :
+1. **Collecte (Crawler)** : Récupère les articles des sources officielles (ex: Radio Okapi).
+2. **Indexation** : Vectorise le texte (Embeddings) et le stocke dans pgvector.
+3. **Moteur RAG** : Utilise Mistral-7B pour répondre aux questions en croisant les faits du corpus.
+4. **Interfaces** : Web, WhatsApp et Telegram (via Webhooks).
 
 ---
 
-### User Query
+## Structure du Projet
 
-1. User submits search query
-2. Symfony forwards query to AI service
-3. AI generates embedding
-4. Vector similarity search (pgvector)
-5. Results grouped by story
-6. RAG summary generated
-7. Structured response returned to frontend
+- `ai-service/` : Moteur sémantique Python, traitement IA et orchestrateur RAG.
+- `frontend/` : Application Web Next.js.
+- `docs/` : Documentation technique et modélisations UML (Draw.io).
 
 ---
 
-##  Repository Structure
+## Guide de Démarrage Rapide
 
-- backend/ → Symfony API
-- frontend/ → Next.js application
-- ai-service/ → Python semantic engine
-
----
-
-##  Development Setup
-
-### AI Service (Python)
-Le service d'IA gère la vectorisation des articles et la recherche sémantique.
-- **Chemin** : `ai-service/`
-- **Installation** : Voir le [README détaillé de ai-service](ai-service/README.md).
-- **Statut** : Base de données initialisée avec ~2000 articles du corpus RDC.
-
-### Backend (Symfony)
-... (à compléter)
-
-### Frontend (Next.js)
-Le frontend fournit deux espaces principaux avec une direction visuelle premium inspirée de shadcn, en bleu foncé, bleu clair et blanc, avec une base Tailwind.
-- **Espace client** : authentification, pose de questions, consultation de l'historique et affichage des réponses sourcées.
-- **Espace admin** : supervision du système, gestion des sources, lancement du crawl et suivi de l'état du pipeline.
-- **Objectif UI** : interface claire, moderne et stable pour l'usage quotidien sur desktop et mobile.
-
----
-
-## Lancer tout en meme temps (front + back + FastAPI)
-
-Depuis la racine du projet, lance:
+### Lancement global (Dev)
+Depuis la racine du projet, exécutez :
 
 ```bash
 bash scripts/dev-all.sh
 ```
 
-Ce script demarre:
-- Frontend Next.js: http://127.0.0.1:3000
-- Service FastAPI: http://127.0.0.1:8000
+Ce script démarre :
+- **Frontend** : [http://localhost:3000](http://localhost:3000)
+- **Service IA (FastAPI)** : [http://localhost:8000](http://localhost:8000)
 
-Les logs sont ecrits dans `.logs/`.
+### Configuration
+Les variables d'environnement (Tokens Telegram/WhatsApp, URL DB) doivent être configurées dans `ai-service/.env`.
 
-Pour arreter tous les services: `Ctrl+C` dans le terminal du script.
+---
 
-### Connexion frontend vers FastAPI
-
-Le frontend appelle FastAPI via un proxy Next (`/api/fastapi/rag`) pour eviter les problemes CORS.
-
-Si besoin, configure l'URL FastAPI dans `frontend/.env.local`:
-
-```bash
-NEXT_PUBLIC_FASTAPI_URL=http://127.0.0.1:8000
-```
+## Impact et Apport
+Contrairement aux IA généralistes (ChatGPT/Perplexity), ce système est **bridé sur un corpus local validé**, évitant les hallucinations sur l'actualité congolaise et offrant un outil de Fact-Checking précis en temps réel dans les groupes de messagerie.
