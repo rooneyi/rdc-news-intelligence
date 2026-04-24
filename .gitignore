@@ -43,7 +43,14 @@ ai-service/data/crawler/*
 # Fichiers de configuration sensibles
 ai-service/.env
 ai-service/.env_file
+# data lourde
+ai-service/data/
+*.jsonl
 
+# cache frontend
+frontend/tmp/
+*.sst
+.next/
 # Fichiers temporaires, logs, outputs
 *.log
 *.tmp
