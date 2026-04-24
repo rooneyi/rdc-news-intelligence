@@ -1,3 +1,67 @@
+# Ignorer le dossier models_cache
+models_cache/
+ai-service/models_cache/
+ai-service/.env/
+ai-service/models_cache/
+*.pt
+*.bin
+*.onnx
+*.h5
+__pycache__/
+# Ignorer les dossiers de cache de modèles
+.cache/
+.huggingface/
+.ollama/
+ai-service/.cache/
+ai-service/.huggingface/
+ai-service/.ollama/
+# Ignorer les modèles téléchargés (HuggingFace, Ollama, etc.)
+ai-service/models/
+ai-service/app/models/
+ai-service/app/services/models/
+ollama_models/
+models/
+# Ignorer l'environnement virtuel Python
+.env/
+env/
+venv/
+ENV/
+__pycache__/
+
+# Ignorer les fichiers/dossiers du crawler
+ai-service/data/crawler/
+ai-service/data/**/*.jsonl
+ai-service/data/**/*.html
+ai-service/data/**/*.xml
+ai-service/data/**/*.csv
+ai-service/data/**/*.xlsx
+
+# Ignore all crawl data except the source file
+ai-service/data/crawler/*
+!ai-service/data/crawler/source.json
+
+# Fichiers de configuration sensibles
+ai-service/.env
+ai-service/.env_file
+# data lourde
+ai-service/data/
+*.jsonl
+
+# cache frontend
+frontend/tmp/
+*.sst
+.next/
+# Fichiers temporaires, logs, outputs
+*.log
+*.tmp
+*.bak
+*.swp
+*.sqlite3
+*.db
+
+# Fichiers système
+.DS_Store
+Thumbs.db
 .env
 ./env
 .venv
@@ -5,7 +69,9 @@ __pycache__
 *.pyc
 *.pyo
 *.pyd
-.Python
+.idea/
+
+*.jsonl
 
 # Distribution / packaging
 .Python

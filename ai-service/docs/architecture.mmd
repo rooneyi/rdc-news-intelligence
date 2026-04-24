@@ -1,0 +1,76 @@
+graph TD
+    %% Clients
+    U[Utilisateur et Journaliste]
+
+    subgraph Channels
+        W[Frontend Web Nextjs]
+        T[Telegram Bot]
+        WA[WhatsApp Cloud API]
+    end
+
+    U --> W
+    U --> T
+    U --> WA
+
+    %% FastAPI Service
+    subgraph AI
+        subgraph API
+            A1[/POST /rag, /rag/stream, /rag/image/]
+            A2[/Routes articles et crawler/]
+            WH[/Webhooks Telegram et WhatsApp/]
+        end
+
+        subgraph Services
+            RAG[RAGService]
+            EMB[EmbeddingService]
+            RET[RetrievalService]
+            LLM[LLMService (Ollama/Mistral)]
+            OCR[OCRService (pytesseract)]
+            LOAD[Dataset Loader / Crawler Jobs]
+        end
+    end
+
+    %% External deps
+    subgraph DB
+        ART[Table articles et embeddings]
+    end
+
+    subgraph Ollama
+        M[Mistral LLM]
+    end
+
+    subgraph OCRDeps
+        TES[Tesseract binaire]
+    end
+
+    subgraph MessagingAPIs
+        TGAPI[Telegram Bot API]
+        WAAPI[WhatsApp Cloud API]
+    end
+
+    %% Flots clients vers API
+    W -->|HTTP JSON| A1
+    T -->|Messages utilisateur| TGAPI --> WH
+    WA -->|Webhook HTTP| WAAPI --> WH
+
+    %% Webhooks et RAG
+    WH -->|Texte ou image apres telechargement| OCR
+    A1 -->|Texte direct ou OCR| OCR
+
+    OCR -->|Texte extrait| RAG
+
+    RAG --> EMB
+    EMB --> RET
+    RET --> ART
+    RAG --> LLM
+    LLM --> M
+
+    %% Reponses
+    RAG -->|Reponse et sources| A1
+    RAG -->|Texte a renvoyer| WH
+
+    %% Stockage et jobs
+    LOAD --> ART
+
+    %% Dépendances bas niveau
+    OCR --> TES

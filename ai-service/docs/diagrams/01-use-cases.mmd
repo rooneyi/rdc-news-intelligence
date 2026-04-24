@@ -1,0 +1,19 @@
+flowchart LR
+    U[Utilisateur]
+    A[Administrateur]
+
+    subgraph S[RDC_News_Intelligence]
+        UC1[Consulter_reponse_RAG]
+        UC2[Verifier_image_rumeur]
+        UC3[Rechercher_articles_similaires]
+        UC4[Lancer_crawl]
+        UC5[Indexer_articles]
+    end
+
+    U --> UC1
+    U --> UC2
+    U --> UC3
+    A --> UC4
+    A --> UC5
+    UC1 --> UC3
+    UC2 --> UC1

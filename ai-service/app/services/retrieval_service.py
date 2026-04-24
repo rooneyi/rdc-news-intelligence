@@ -25,7 +25,7 @@ class RetrievalService:
             try:
                 cur.execute(
                     """
-                    SELECT id, title, content
+                    SELECT id, title, content, link, source_id, hash
                     FROM articles
                     ORDER BY embedding <=> %s::vector
                     LIMIT %s
@@ -34,7 +34,17 @@ class RetrievalService:
                 )
                 results = cur.fetchall()
                 logger.debug(f"Retrieval: found {len(results)} similar articles")
-                return [ArticleOut(id=r[0], title=r[1], content=r[2]) for r in results]
+                return [
+                    ArticleOut(
+                        id=r[0],
+                        title=r[1],
+                        content=r[2],
+                        link=r[3],
+                        source_id=r[4],
+                        hash=r[5],
+                    )
+                    for r in results
+                ]
             finally:
                 cur.close()
                 conn.close()

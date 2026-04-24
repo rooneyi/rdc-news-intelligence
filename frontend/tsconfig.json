@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -19,7 +23,9 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": [
+        "./*"
+      ]
     }
   },
   "include": [
@@ -28,7 +34,49 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts"
+    "**/*.mts",
+    "/tmp/rdc-next-dev-93802/types/**/*.ts",
+    "/tmp/rdc-next-dev-93802/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-100036/types/**/*.ts",
+    "/tmp/rdc-next-dev-100036/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-110130/types/**/*.ts",
+    "/tmp/rdc-next-dev-110130/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-36924/types/**/*.ts",
+    "/tmp/rdc-next-dev-36924/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-11352/types/**/*.ts",
+    "/tmp/rdc-next-dev-11352/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-20252/types/**/*.ts",
+    "/tmp/rdc-next-dev-20252/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-80418/types/**/*.ts",
+    "/tmp/rdc-next-dev-80418/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-80446/types/**/*.ts",
+    "/tmp/rdc-next-dev-80446/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-7965/types/**/*.ts",
+    "/tmp/rdc-next-dev-7965/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-5612/types/**/*.ts",
+    "/tmp/rdc-next-dev-5612/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-58989/types/**/*.ts",
+    "/tmp/rdc-next-dev-58989/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-37130/types/**/*.ts",
+    "/tmp/rdc-next-dev-37130/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-10441/types/**/*.ts",
+    "/tmp/rdc-next-dev-10441/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-23009/types/**/*.ts",
+    "/tmp/rdc-next-dev-23009/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-25292/types/**/*.ts",
+    "/tmp/rdc-next-dev-25292/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-11182/types/**/*.ts",
+    "/tmp/rdc-next-dev-11182/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-9725/types/**/*.ts",
+    "/tmp/rdc-next-dev-9725/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-25744/types/**/*.ts",
+    "/tmp/rdc-next-dev-25744/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-92829/types/**/*.ts",
+    "/tmp/rdc-next-dev-92829/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-168170/types/**/*.ts",
+    "/tmp/rdc-next-dev-168170/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules"
+  ]
 }

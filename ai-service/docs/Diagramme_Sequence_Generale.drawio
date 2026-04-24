@@ -1,0 +1,95 @@
+<mxfile host="65bd71144e">
+    <diagram id="gen_seq" name="5. Séquence Générale">
+        <mxGraphModel dx="695" dy="578" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" background="#ffffff" math="0" shadow="0">
+            <root>
+                <mxCell id="gs_0"/>
+                <mxCell id="gs_1" parent="gs_0"/>
+                <mxCell id="gs_usr" value="Utilisateur (Web/Group)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" parent="gs_1" vertex="1">
+                    <mxGeometry x="40" y="36" width="100" height="604" as="geometry"/>
+                </mxCell>
+                <mxCell id="gs_wg" value="FastAPI Webhook Gateway" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" parent="gs_1" vertex="1">
+                    <mxGeometry x="220" y="40" width="160" height="600" as="geometry"/>
+                </mxCell>
+                <mxCell id="gs_cl" value="Classification" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" parent="gs_1" vertex="1">
+                    <mxGeometry x="440" y="40" width="120" height="600" as="geometry"/>
+                </mxCell>
+                <mxCell id="gs_db" value="VectorDB (PostgreSQL)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" parent="gs_1" vertex="1">
+                    <mxGeometry x="620" y="40" width="140" height="600" as="geometry"/>
+                </mxCell>
+                <mxCell id="gs_rag" value="RAG Generator (Mistral)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" parent="gs_1" vertex="1">
+                    <mxGeometry x="840" y="40" width="140" height="600" as="geometry"/>
+                </mxCell>
+                <mxCell id="m1" value="Message / Question (Texte/Image)" style="html=1;verticalAlign=bottom;endArrow=block;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" parent="gs_1" source="gs_usr" target="gs_wg" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="100" y="100" as="sourcePoint"/>
+                        <Array as="points">
+                            <mxPoint x="200" y="100"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="alt1" value="alt [Si Groupe]" style="shape=umlFrame;whiteSpace=wrap;html=1;width=120;height=30;boundedLbl=1;verticalAlign=middle;align=left;spacingLeft=5;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" parent="gs_1" vertex="1">
+                    <mxGeometry x="80" y="130" width="500" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="m2" value="Analyser Trigger @NewsBot" style="html=1;verticalAlign=bottom;endArrow=block;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" parent="gs_1" source="gs_wg" target="gs_cl" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="300" y="160" as="sourcePoint"/>
+                        <Array as="points">
+                            <mxPoint x="400" y="160"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m3" value="Indicateur de pertinence" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" parent="gs_1" source="gs_cl" target="gs_wg" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="490" y="200" as="sourcePoint"/>
+                        <Array as="points">
+                            <mxPoint x="400" y="200"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="opt1" value="opt [Requête validée]" style="shape=umlFrame;whiteSpace=wrap;html=1;width=140;height=30;boundedLbl=1;verticalAlign=middle;align=left;spacingLeft=5;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" parent="gs_1" vertex="1">
+                    <mxGeometry x="100" y="270" width="900" height="300" as="geometry"/>
+                </mxCell>
+                <mxCell id="m4" value="Recherche sémantique (Embeddings)" style="html=1;verticalAlign=bottom;endArrow=block;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" parent="gs_1" source="gs_wg" target="gs_db" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="300" y="320" as="sourcePoint"/>
+                        <Array as="points">
+                            <mxPoint x="550" y="320"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m5" value="Contexte documenté (Facts)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" parent="gs_1" source="gs_db" target="gs_wg" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="670" y="360" as="sourcePoint"/>
+                        <Array as="points">
+                            <mxPoint x="550" y="360"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m6" value="Synthèse Fact-Checking + Sources" style="html=1;verticalAlign=bottom;endArrow=block;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" parent="gs_1" source="gs_wg" target="gs_rag" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="300" y="410" as="sourcePoint"/>
+                        <Array as="points">
+                            <mxPoint x="800" y="410"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m7" value="Résultat RAG structuré (Verdict)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" parent="gs_1" source="gs_rag" target="gs_wg" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="890" y="450" as="sourcePoint"/>
+                        <Array as="points">
+                            <mxPoint x="800" y="450"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m8" value="Correction publiée avec Preuves/Links" style="html=1;verticalAlign=bottom;endArrow=block;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" parent="gs_1" source="gs_wg" target="gs_usr" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="300" y="520" as="sourcePoint"/>
+                        <Array as="points">
+                            <mxPoint x="180" y="520"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

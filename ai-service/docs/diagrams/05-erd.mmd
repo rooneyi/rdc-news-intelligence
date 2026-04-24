@@ -1,0 +1,27 @@
+erDiagram
+    ARTICLES {
+        int id PK
+        string title
+        string content
+        string source_id
+        string link
+        string hash
+        string categories
+        string image
+        string embedding
+        datetime created_at
+    }
+
+    TRAINING_RUNS {
+        int id PK
+        datetime started_at
+        datetime ended_at
+        string status
+        string model_name
+        int processed_count
+        int reembedded_count
+        string note
+        datetime created_at
+    }
+
+    TRAINING_RUNS ||--o{ ARTICLES : reembedding_updates

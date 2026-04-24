@@ -24,6 +24,7 @@ gyp==0.1
 html5lib==1.1
 httplib2==0.20.4
 idna==3.6
+iotop==0.6
 Jinja2==3.1.2
 jsonpatch==1.32
 jsonpointer==2.0

@@ -4,7 +4,7 @@ Crée la table articles si elle n'existe pas
 """
 import logging
 from app.db.session import get_db_connection
-from app.db.models import CREATE_TABLE_SQL
+from app.db.models import CREATE_TABLE_SQL, MIGRATE_TABLE_SQL
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,6 +24,10 @@ def init_database():
         # Créer la table articles
         cur.execute(CREATE_TABLE_SQL)
         logger.info("✓ Table articles créée (ou déjà existante)")
+
+        # Migrer les colonnes source_id/link/hash si absentes
+        cur.execute(MIGRATE_TABLE_SQL)
+        logger.info("✓ Colonnes source_id/link/hash présentes")
 
         conn.commit()
         cur.close()

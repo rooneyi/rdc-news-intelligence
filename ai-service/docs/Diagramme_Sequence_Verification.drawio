@@ -1,0 +1,60 @@
+<mxfile host="65bd71144e">
+    <diagram id="rag_verif" name="4. Vérification RAG">
+        <mxGraphModel dx="1000" dy="800" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" background="#ffffff" math="0" shadow="0">
+            <root>
+                <mxCell id="rv_0"/>
+                <mxCell id="rv_1" parent="rv_0"/>
+                
+                <mxCell id="rv_wh" value="Orchestrateur RAG" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rv_1">
+                    <mxGeometry x="60" y="40" width="140" height="600" as="geometry"/>
+                </mxCell>
+                <mxCell id="rv_db" value="Base Vectorielle" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rv_1">
+                    <mxGeometry x="280" y="40" width="140" height="600" as="geometry"/>
+                </mxCell>
+                <mxCell id="rv_llm" value="Service LLM" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rv_1">
+                    <mxGeometry x="500" y="40" width="140" height="600" as="geometry"/>
+                </mxCell>
+                <mxCell id="rv_usr" value="Utilisateur" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;participant=umlActor;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rv_1">
+                    <mxGeometry x="720" y="40" width="100" height="600" as="geometry"/>
+                </mxCell>
+
+                <mxCell id="m1" value="Requête de similarité" style="html=1;verticalAlign=bottom;endArrow=block;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rv_1" source="rv_wh" target="rv_db">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="130" y="100" as="sourcePoint"/><Array as="points"><mxPoint x="250" y="100"/></Array></mxGeometry>
+                </mxCell>
+                <mxCell id="m2" value="Documents proches + Sources" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rv_1" source="rv_db" target="rv_wh">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="350" y="140" as="sourcePoint"/><Array as="points"><mxPoint x="250" y="140"/></Array></mxGeometry>
+                </mxCell>
+                
+                <mxCell id="alt1" value="alt [Contexte trouvé]" style="shape=umlFrame;whiteSpace=wrap;html=1;width=160;height=30;boundedLbl=1;verticalAlign=middle;align=left;spacingLeft=5;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rv_1">
+                    <mxGeometry x="40" y="180" width="750" height="380" as="geometry"/>
+                </mxCell>
+                
+                <mxCell id="m3" value="Générer la réponse (Prompt+Infos)" style="html=1;verticalAlign=bottom;endArrow=block;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rv_1" source="rv_wh" target="rv_llm">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="130" y="240" as="sourcePoint"/><Array as="points"><mxPoint x="450" y="240"/></Array></mxGeometry>
+                </mxCell>
+                <mxCell id="m4" value="Résumé + Verdict vérifié" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rv_1" source="rv_llm" target="rv_wh">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="570" y="280" as="sourcePoint"/><Array as="points"><mxPoint x="450" y="280"/></Array></mxGeometry>
+                </mxCell>
+                <mxCell id="m5" value="Assemblage réponse (URLs)" style="html=1;verticalAlign=bottom;endArrow=block;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;rounded=0;edgeStyle=orthogonalEdgeStyle;curved=1;" edge="1" parent="rv_1" source="rv_wh" target="rv_wh">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="130" y="320" as="sourcePoint"/><Array as="points"><mxPoint x="200" y="320"/><mxPoint x="200" y="350"/></Array></mxGeometry>
+                </mxCell>
+                <mxCell id="m6" value="Verdict + Sources" style="html=1;verticalAlign=bottom;endArrow=block;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rv_1" source="rv_wh" target="rv_usr">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="130" y="400" as="sourcePoint"/><Array as="points"><mxPoint x="700" y="400"/></Array></mxGeometry>
+                </mxCell>
+                
+                <mxCell id="sep1" value="[Aucune information trouvée]" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontColor=#000000;" vertex="1" parent="rv_1">
+                    <mxGeometry x="40" y="430" width="180" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="m7" value="Réponse prudente" style="html=1;verticalAlign=bottom;endArrow=block;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rv_1" source="rv_wh" target="rv_llm">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="130" y="480" as="sourcePoint"/><Array as="points"><mxPoint x="450" y="480"/></Array></mxGeometry>
+                </mxCell>
+                <mxCell id="m8" value="Avertissement (manque sources)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rv_1" source="rv_llm" target="rv_wh">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="570" y="520" as="sourcePoint"/><Array as="points"><mxPoint x="450" y="520"/></Array></mxGeometry>
+                </mxCell>
+                <mxCell id="m9" value="Réponse (manque de preuves)" style="html=1;verticalAlign=bottom;endArrow=block;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rv_1" source="rv_wh" target="rv_usr">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="130" y="540" as="sourcePoint"/><Array as="points"><mxPoint x="700" y="540"/></Array></mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

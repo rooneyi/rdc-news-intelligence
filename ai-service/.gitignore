@@ -1,4 +1,4 @@
-# Python
+est # Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -58,4 +58,9 @@ Thumbs.db
 .cache/
 .pytest_cache/
 .mypy_cache/
+
+# Crawler Data
+data/crawler/*.jsonl
+data/crawler/*.json
+!data/crawler/sources.json
 

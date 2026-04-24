@@ -1,0 +1,68 @@
+<mxfile host="65bd71144e">
+    <diagram id="rag_req" name="3. Requête RAG">
+        <mxGraphModel dx="1000" dy="800" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" background="#ffffff" math="0" shadow="0">
+            <root>
+                <mxCell id="rs_0"/>
+                <mxCell id="rs_1" parent="rs_0"/>
+                <mxCell id="rs_u" value="User" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;participant=umlActor;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rs_1">
+                    <mxGeometry x="20" y="40" width="40" height="520" as="geometry"/>
+                </mxCell>
+                <mxCell id="rs_ch" value="Channel" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rs_1">
+                    <mxGeometry x="120" y="40" width="100" height="520" as="geometry"/>
+                </mxCell>
+                <mxCell id="rs_api" value="FastAPI" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rs_1">
+                    <mxGeometry x="260" y="40" width="100" height="520" as="geometry"/>
+                </mxCell>
+                <mxCell id="rs_emb" value="EmbeddingService" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rs_1">
+                    <mxGeometry x="400" y="40" width="120" height="520" as="geometry"/>
+                </mxCell>
+                <mxCell id="rs_ret" value="RetrievalService" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rs_1">
+                    <mxGeometry x="560" y="40" width="120" height="520" as="geometry"/>
+                </mxCell>
+                <mxCell id="rs_db" value="PostgreSQL" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rs_1">
+                    <mxGeometry x="720" y="40" width="100" height="520" as="geometry"/>
+                </mxCell>
+                <mxCell id="rs_rag" value="RAGService" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rs_1">
+                    <mxGeometry x="860" y="40" width="100" height="520" as="geometry"/>
+                </mxCell>
+                <mxCell id="rs_llm" value="Ollama" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="rs_1">
+                    <mxGeometry x="1000" y="40" width="100" height="520" as="geometry"/>
+                </mxCell>
+
+                <mxCell id="m1" value="Envoyer_question" style="html=1;verticalAlign=bottom;endArrow=block;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rs_1" source="rs_u" target="rs_ch">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="40" y="100" as="sourcePoint"/><Array as="points"><mxPoint x="100" y="100"/></Array></mxGeometry>
+                </mxCell>
+                <mxCell id="m2" value="POST_rag" style="html=1;verticalAlign=bottom;endArrow=block;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rs_1" source="rs_ch" target="rs_api">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="170" y="130" as="sourcePoint"/><Array as="points"><mxPoint x="230" y="130"/></Array></mxGeometry>
+                </mxCell>
+                <mxCell id="m3" value="Encode_query" style="html=1;verticalAlign=bottom;endArrow=block;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rs_1" source="rs_api" target="rs_emb">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="310" y="160" as="sourcePoint"/><Array as="points"><mxPoint x="380" y="160"/></Array></mxGeometry>
+                </mxCell>
+                <mxCell id="m4" value="Query_vector" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rs_1" source="rs_emb" target="rs_api">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="460" y="190" as="sourcePoint"/><Array as="points"><mxPoint x="380" y="190"/></Array></mxGeometry>
+                </mxCell>
+                <mxCell id="m5" value="Search_similar" style="html=1;verticalAlign=bottom;endArrow=block;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rs_1" source="rs_api" target="rs_ret">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="310" y="230" as="sourcePoint"/><Array as="points"><mxPoint x="450" y="230"/></Array></mxGeometry>
+                </mxCell>
+                <mxCell id="m6" value="Query_top_k" style="html=1;verticalAlign=bottom;endArrow=block;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rs_1" source="rs_ret" target="rs_db">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="640" y="260" as="sourcePoint"/><Array as="points"><mxPoint x="680" y="260"/></Array></mxGeometry>
+                </mxCell>
+                <mxCell id="m7" value="Articles" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rs_1" source="rs_db" target="rs_ret">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="750" y="290" as="sourcePoint"/><Array as="points"><mxPoint x="680" y="290"/></Array></mxGeometry>
+                </mxCell>
+                <mxCell id="m8" value="Context" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rs_1" source="rs_ret" target="rs_rag">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="640" y="330" as="sourcePoint"/><Array as="points"><mxPoint x="780" y="330"/></Array></mxGeometry>
+                </mxCell>
+                <mxCell id="m9" value="Generate_answer" style="html=1;verticalAlign=bottom;endArrow=block;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rs_1" source="rs_rag" target="rs_llm">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="910" y="370" as="sourcePoint"/><Array as="points"><mxPoint x="960" y="370"/></Array></mxGeometry>
+                </mxCell>
+                <mxCell id="m10" value="Answer" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rs_1" source="rs_llm" target="rs_api">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="1050" y="410" as="sourcePoint"/><Array as="points"><mxPoint x="600" y="410"/></Array></mxGeometry>
+                </mxCell>
+                <mxCell id="m11" value="Answer_plus_sources" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;strokeColor=#000000;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="rs_1" source="rs_api" target="rs_ch">
+                    <mxGeometry relative="1" as="geometry"><mxPoint x="310" y="450" as="sourcePoint"/><Array as="points"><mxPoint x="200" y="450"/></Array></mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
