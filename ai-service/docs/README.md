@@ -41,3 +41,55 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 ## 📖 Documentation API
 Une fois lancé, accédez à la documentation interactive sur : [http://localhost:8000/docs](http://localhost:8000/docs)
+
+## 🌐 Déploiement sur `rooney.inafrica.tech`
+
+Pour que les webhooks Telegram et WhatsApp utilisent ton domaine, l'API FastAPI doit être exposée publiquement en HTTPS.
+
+### 1. Lancer FastAPI sur le serveur
+
+```bash
+cd /opt/rdc-news-intelligence/ai-service
+source .env/bin/activate
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+### 2. Mettre un reverse proxy HTTPS devant FastAPI
+
+Configure Nginx, Caddy ou Traefik pour publier le service sur :
+
+```text
+https://rooney.inafrica.tech
+```
+
+Le proxy doit rediriger vers :
+
+```text
+http://127.0.0.1:8000
+```
+
+### 3. Pointer les webhooks vers le domaine public
+
+- Telegram webhook: `https://rooney.inafrica.tech/webhooks/telegram`
+- WhatsApp webhook: `https://rooney.inafrica.tech/webhooks/whatsapp`
+
+### 4. Variables d'environnement à prévoir
+
+```bash
+OLLAMA_HOST=http://127.0.0.1:11434
+TELEGRAM_BOT_TOKEN=...
+WHATSAPP_TOKEN=...
+WHATSAPP_PHONE_ID=...
+WHATSAPP_VERIFY_TOKEN=...
+ENABLE_TELEGRAM_POLLING=false
+```
+
+### 5. Vérification rapide
+
+```bash
+curl https://rooney.inafrica.tech/docs
+curl -X POST https://rooney.inafrica.tech/webhooks/telegram
+curl -X POST https://rooney.inafrica.tech/webhooks/whatsapp
+```
+
+Si tu veux, je peux aussi te générer un fichier Nginx/Caddy prêt à coller pour ce domaine.

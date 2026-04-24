@@ -1,63 +1,92 @@
 <mxfile host="65bd71144e">
-    <diagram id="class_diagram" name="4. Diagramme de Classes">
-        <mxGraphModel dx="1200" dy="800" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" background="#ffffff" math="0" shadow="0">
+    <diagram id="class_diagram" name="Diagramme de Classes UML">
+        <mxGraphModel dx="1422" dy="798" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" background="#ffffff" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
                 
-                <!-- DTO Classes -->
-                <mxCell id="c1" value="ArticleCreate| + title : str&#10;+ content : str&#10;+ link : str&#10;+ source_id : str&#10;+ hash : str" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="1">
-                    <mxGeometry x="40" y="40" width="200" height="120" as="geometry"/>
+                <!-- DTO COLUMN (X=60) -->
+                <mxCell id="c1" value="&lt;b&gt;ArticleCreate&lt;/b&gt;&lt;hr/&gt;+ title : str&lt;br/&gt;+ content : str&lt;br/&gt;+ link : str&lt;hr/&gt;" style="verticalAlign=top;align=left;spacingLeft=4;spacingRight=4;strokeColor=#000000;fillColor=#ffffff;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="60" y="60" width="180" height="100" as="geometry"/>
+                </mxCell>
+
+                <mxCell id="c2" value="&lt;b&gt;ArticleOut&lt;/b&gt;&lt;hr/&gt;+ id : int&lt;br/&gt;+ title : str&lt;br/&gt;+ similarity : float&lt;hr/&gt;" style="verticalAlign=top;align=left;spacingLeft=4;spacingRight=4;strokeColor=#000000;fillColor=#ffffff;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="60" y="200" width="180" height="100" as="geometry"/>
+                </mxCell>
+
+                <mxCell id="c3" value="&lt;b&gt;RAGRequest&lt;/b&gt;&lt;hr/&gt;+ query : str&lt;br/&gt;+ top_k : int&lt;hr/&gt;" style="verticalAlign=top;align=left;spacingLeft=4;spacingRight=4;strokeColor=#000000;fillColor=#ffffff;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="60" y="340" width="180" height="80" as="geometry"/>
+                </mxCell>
+
+                <mxCell id="c4" value="&lt;b&gt;RAGResponse&lt;/b&gt;&lt;hr/&gt;+ summary : str&lt;br/&gt;+ sources : List[ArtOut]&lt;hr/&gt;" style="verticalAlign=top;align=left;spacingLeft=4;spacingRight=4;strokeColor=#000000;fillColor=#ffffff;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="60" y="460" width="180" height="100" as="geometry"/>
+                </mxCell>
+
+                <!-- ORCHESTRATOR COLUMN (X=360) -->
+                <mxCell id="s2" value="&lt;b&gt;RAGService&lt;/b&gt;&lt;hr/&gt;&lt;hr/&gt;+ generate_full_answer(q, ch) : RAGRes&lt;br/&gt;+ check_and_verify(msg) : RAGRes" style="verticalAlign=top;align=left;spacingLeft=4;spacingRight=4;strokeColor=#000000;fillColor=#ffffff;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="340" y="240" width="340" height="100" as="geometry"/>
+                </mxCell>
+
+                <mxCell id="s1" value="&lt;b&gt;ArticleService&lt;/b&gt;&lt;hr/&gt;&lt;hr/&gt;+ create_article(data : ArtCre) : ArtOut&lt;br/&gt;+ search_similar(q : str) : List[ArtOut]" style="verticalAlign=top;align=left;spacingLeft=4;spacingRight=4;strokeColor=#000000;fillColor=#ffffff;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="340" y="440" width="340" height="100" as="geometry"/>
+                </mxCell>
+
+                <!-- ENGINE COLUMN (X=800) -->
+                <mxCell id="s3" value="&lt;b&gt;EmbeddingService&lt;/b&gt;&lt;hr/&gt;&lt;hr/&gt;+ generate(text : str) : List[float]" style="verticalAlign=top;align=left;spacingLeft=4;spacingRight=4;strokeColor=#000000;fillColor=#ffffff;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="800" y="100" width="280" height="70" as="geometry"/>
+                </mxCell>
+
+                <mxCell id="s4" value="&lt;b&gt;RetrievalService&lt;/b&gt;&lt;hr/&gt;&lt;hr/&gt;+ get_similar(v : List[float]) : List[ArtOut]" style="verticalAlign=top;align=left;spacingLeft=4;spacingRight=4;strokeColor=#000000;fillColor=#ffffff;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="800" y="220" width="280" height="70" as="geometry"/>
+                </mxCell>
+
+                <mxCell id="s5" value="&lt;b&gt;LLMService&lt;/b&gt;&lt;hr/&gt;&lt;hr/&gt;+ generate(prompt : str) : str" style="verticalAlign=top;align=left;spacingLeft=4;spacingRight=4;strokeColor=#000000;fillColor=#ffffff;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="800" y="340" width="280" height="70" as="geometry"/>
+                </mxCell>
+
+                <mxCell id="s6" value="&lt;b&gt;OCRService&lt;/b&gt;&lt;hr/&gt;&lt;hr/&gt;+ extract(image : bytes) : str" style="verticalAlign=top;align=left;spacingLeft=4;spacingRight=4;strokeColor=#000000;fillColor=#ffffff;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="800" y="460" width="280" height="70" as="geometry"/>
+                </mxCell>
+
+                <!-- ORTHOGONAL RELATIONS -->
+                <mxCell id="e1" value="" style="endArrow=diamond;endFill=1;html=1;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#000000;edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="s2" target="s3">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e2" value="" style="endArrow=diamond;endFill=1;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#000000;edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="s2" target="s4">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e3" value="" style="endArrow=diamond;endFill=1;html=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#000000;edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="s2" target="s5">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e4" value="" style="endArrow=diamond;endFill=1;html=1;exitX=1;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#000000;edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="s2" target="s6">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="740" y="315"/>
+                            <mxPoint x="740" y="495"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e5" value="" style="endArrow=diamond;endFill=1;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;strokeColor=#000000;edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="s1" target="s3">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="760" y="490"/>
+                            <mxPoint x="760" y="580"/>
+                            <mxPoint x="940" y="580"/>
+                            <mxPoint x="940" y="170"/>
+                        </Array>
+                    </mxGeometry>
                 </mxCell>
                 
-                <mxCell id="c2" value="ArticleOut| + id : int&#10;+ title : str&#10;+ content : str&#10;+ similarity : float" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="1">
-                    <mxGeometry x="40" y="200" width="200" height="100" as="geometry"/>
-                </mxCell>
-
-                <mxCell id="c3" value="RAGRequest| + query : str&#10;+ top_k : int&#10;+ min_score : float" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="1">
-                    <mxGeometry x="40" y="340" width="200" height="80" as="geometry"/>
-                </mxCell>
-
-                <!-- Services -->
-                <mxCell id="s1" value="ArticleService| + create_article(data : ArticleCreate) : ArticleOut&#10;+ save_crawled_article(data : ArticleCreate) : bool&#10;+ search_similar(query : str, k : int) : List[ArticleOut]" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="1">
-                    <mxGeometry x="320" y="40" width="380" height="90" as="geometry"/>
-                </mxCell>
-
-                <mxCell id="s2" value="RAGService| + generate_full_answer(query : str, channel : str) : RAGResponse&#10;+ check_and_verify(message : str) : RAGResponse" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="1">
-                    <mxGeometry x="320" y="200" width="480" height="80" as="geometry"/>
-                </mxCell>
-
-                <mxCell id="s3" value="EmbeddingService| + generate(text : str) : List[float]" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="1">
-                    <mxGeometry x="840" y="40" width="280" height="60" as="geometry"/>
-                </mxCell>
-
-                <mxCell id="s4" value="RetrievalService| + get_similar_articles(vector : List[float], k : int) : List[ArticleOut]" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="1">
-                    <mxGeometry x="840" y="140" width="480" height="60" as="geometry"/>
-                </mxCell>
-
-                <mxCell id="s5" value="LLMService| + generate_completion(prompt : str) : str" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="1">
-                    <mxGeometry x="840" y="240" width="280" height="60" as="geometry"/>
-                </mxCell>
-
-                <mxCell id="s6" value="OCRService| + extract_text(image_bytes : bytes) : str" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="1">
-                    <mxGeometry x="840" y="340" width="280" height="60" as="geometry"/>
-                </mxCell>
-
-                <!-- Relations -->
-                <mxCell id="r1" value="" style="endArrow=diamond;endFill=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#000000;" edge="1" parent="1" source="s1" target="s3">
+                <mxCell id="e6" value="" style="endArrow=open;dashed=1;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#000000;" edge="1" parent="1" source="s2" target="c3">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="r2" value="" style="endArrow=diamond;endFill=1;html=1;exitX=1;exitY=0;entryX=0;entryY=1;strokeColor=#000000;" edge="1" parent="1" source="s2" target="s3">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="r3" value="" style="endArrow=diamond;endFill=1;html=1;exitX=1;exitY=0.25;entryX=0;entryY=0.5;strokeColor=#000000;" edge="1" parent="1" source="s2" target="s4">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="r4" value="" style="endArrow=diamond;endFill=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#000000;" edge="1" parent="1" source="s2" target="s5">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="r5" value="" style="endArrow=diamond;endFill=1;html=1;exitX=1;exitY=0.75;entryX=0;entryY=0.5;strokeColor=#000000;" edge="1" parent="1" source="s2" target="s6">
-                    <mxGeometry relative="1" as="geometry"/>
+                <mxCell id="e7" value="" style="endArrow=open;dashed=1;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#000000;" edge="1" parent="1" source="s1" target="c1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="280" y="490"/>
+                            <mxPoint x="280" y="110"/>
+                        </Array>
+                    </mxGeometry>
                 </mxCell>
             </root>
         </mxGraphModel>

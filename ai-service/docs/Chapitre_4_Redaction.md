@@ -2,88 +2,70 @@
 
 ## 4.1. Introduction
 
-Après la modélisation architecturale, il convient de décrire la mise en œuvre concrète du système. Ce chapitre présente les principaux composants implémentés dans le projet RDC News Intelligence, les technologies utilisées, l'organisation du code, les mécanismes d'intégration multicanale et les opérations de maintenance qui permettent au système de rester fonctionnel et à jour.
+Après la modélisation architecturale, il convient de décrire la mise en œuvre concrète du système. Ce chapitre présente les principaux composants implémentés dans le projet **RDC News Intelligence**, les technologies utilisées, l'organisation du code, les mécanismes d'intégration multicanale et les opérations de maintenance qui permettent au système de rester fonctionnel et à jour.
 
-L'objectif n'est pas seulement de montrer que le projet a été codé, mais d'expliquer comment les choix techniques du chapitre précédent ont été traduits en services réels, en routes d'API, en scripts d'ingestion et en outils de traitement. Cette partie sert également de pont entre la conception et l'exploitation du système.
+L'objectif est d'expliquer comment les choix techniques du chapitre précédent ont été traduits en services réels, en routes d'API et en scripts d'ingestion.
 
-## 4.2. Stack technologique
+## 4.2. Stack technologique et environnement
 
-Le backend repose sur FastAPI, choisi pour sa simplicité, sa compatibilité avec Python et sa capacité à gérer des routes asynchrones. La base de données principale est PostgreSQL, complétée par l'extension pgvector pour la recherche vectorielle. Les embeddings sont produits par SentenceTransformers, tandis que la génération de réponses est assurée par un modèle local exécuté via Ollama.
+Le backend repose sur **FastAPI**, choisi pour sa rapidité et sa capacité à gérer des flux asynchrones. La base de données principale est **PostgreSQL**, complétée par l'extension **pgvector** pour la recherche vectorielle sémantique. Les embeddings sont produits par **SentenceTransformers**, tandis que la génération de réponses est assurée par un modèle local exécuté via **Ollama (Mistral-7B)**.
 
-Le traitement OCR est assuré par Tesseract, intégré au backend pour permettre l'analyse d'images contenant du texte. Les interactions avec les utilisateurs passent par Telegram et WhatsApp, chacun avec son mode d'intégration spécifique. Telegram fonctionne par polling, alors que WhatsApp s'appuie sur des webhooks fournis par l'API Cloud de Meta. Un service de décision thématique complète désormais cette chaîne afin de n'activer le bot en groupe que lorsque le contexte de groupe est identifiable et que le contenu concerne la politique, le sport, la santé ou la guerre; les messages privés continuent de suivre le flux complet sans filtrage.
+Le traitement **OCR** est assuré par **Tesseract**, permettant l'analyse d'images. Les interactions utilisateurs passent par **Telegram** (polling) et **WhatsApp** (Webhooks Cloud API Meta). Un service de décision thématique filtre les messages pour n'activer le bot que sur les sujets sensibles (Politique, Santé, etc.).
 
-Le projet utilise également un crawler pour alimenter le corpus en continu. Les articles collectés sont enregistrés sous format JSONL, puis réinjectés dans l'API afin d'être vectorisés et indexés. Cette chaîne technique constitue le socle de la mise à jour continue du moteur de recommandation.
+## 4.3. Organisation du code et services
 
-## 4.3. Organisation du code
-
-L'organisation du projet suit une séparation claire entre l'entrée de l'application, les routes et les services métiers. Le point d'entrée principal initialise l'application FastAPI, charge la configuration, connecte la base de données et active les traitements de fond nécessaires au fonctionnement du système.
-
-Les routes gèrent les points d'accès externes. Certaines routes exposent les fonctionnalités de recherche et de génération. D'autres reçoivent les webhooks de messagerie ou les requêtes d'administration. Cette organisation améliore la lisibilité du projet et facilite la maintenance.
-
-Les services métiers encapsulent la logique importante du système. Le service de vectorisation transforme les textes en embeddings. Le service de recherche interroge la base PostgreSQL. Le service de génération dialogue avec Ollama. Le service OCR extrait le texte des images. Un service de décision thématique analyse les messages avant déclenchement pour les groupes. Le service article gère l'insertion et la mise à jour des documents. Enfin, le service de pipeline d'entraînement permet de recalculer les représentations en cas de changement de modèle.
+L'architecture suit une séparation stricte entre les points d'entrée (API/Webhooks) et la logique métier (Services) :
+- **Routes API** : Gèrent les requêtes REST, les webhooks WhatsApp/Telegram et l'administration.
+- **Services Métiers** : Encapsulent la vectorisation, la recherche, la génération, l'OCR et le filtrage thématique.
+- **Service Article** : Gère la persistance et l'indexation sémantique automatique.
+- **Pipeline d'Entraînement** : Permet le recalcul des embeddings (re-embedding) pour améliorer la précision globale.
 
 ## 4.4. Flux d'exécution principaux
 
-Les flux d'exécution décrivent le parcours de l'information à travers les différentes couches logiques du système. Cette section détaille comment chaque requête est orchestrée pour garantir une réponse fiable et rapide.
+Les flux d'exécution décrivent le parcours de l'information à travers les différentes couches logiques du système.
 
-**Type de diagramme :** Diagramme de Séquence UML (Synthèse Globale du Flux)
-**Description exhaustive :** Ce diagramme de séquence synthétise l'ensemble du cycle de vie d'un message entrant. Il illustre la robustesse de l'orchestration interne de FastAPI :
-1. **Réception** : Le message est capté par la passerelle de Webhooks.
-2. **Filtrage Intelligent** : Si le message provient d'un groupe, la logique de classification (Trigger logic) analyse si le contenu mérite une intervention. Cela permet de préserver la bande passante et d'éviter les réponses hors-contexte.
-3. **Recherche Sémantique** : Une fois la requête validée, le système interroge la base PostgreSQL (`pgvector`) pour extraire des faits tangibles.
-4. **Génération Contextualisée** : Le moteur RAG utilise Mistral-7B pour fusionner la question et les faits trouvés dans une réponse synthétique unique.
-5. **Restitution** : La réponse finale est publiée sur le canal d'origine avec ses preuves, fermant ainsi la boucle de vérification.
+> [!NOTE]
+> **Synthèse Globale du Flux d'Exécution**
+> **Description** : Diagramme récapitulatif montrant le traitement d'une requête, de la GateWay Webhook jusqu'à la restitution finale par le moteur RAG.
 
 ```mermaid
 sequenceDiagram
-    autonumber
-    actor User as Utilisateur (Web/Group)
-    participant WG as FastAPI Webhook Gateway
-    participant Class as Classification (Trigger logic)
+    participant User as Utilisateur
+    participant WG as FastAPI Webhook
+    participant Class as Classification
     participant DB as VectorDB (PostgreSQL)
-    participant RAG as RAG Generator (Mistral)
+    participant RAG as Moteur RAG (Mistral)
 
-    User->>WG: Message / Question (Texte/Image)
+    User->>WG: Message (Texte/Image)
     
-    alt Si Groupe
+    alt Si contexte de Groupe
         WG->>Class: Analyser Trigger @NewsBot
-        Class-->>WG: Indique si thématique pertinente (Pol/Santé)
+        Class-->>WG: Indique si thématique pertinente
     end
     
-    opt Requête validée (Directe ou Triggered)
-        WG->>DB: Recherche sémantique (Embeddings)
-        DB-->>WG: Contexte documenté (Facts)
-        WG->>RAG: Synthèse Fact-Checking + Sources
-        RAG-->>WG: Résultat RAG structuré (Verdict)
-        WG-->>User: Correction publiée avec Preuves/Links
+    opt Requête validée
+        WG->>DB: Recherche sémantique
+        DB-->>WG: Contexte (Sources fiables)
+        WG->>RAG: Synthèse Fact-Checking
+        RAG-->>WG: Résultat Verdict + Sources
+        WG-->>User: Réponse structurée (Preuves/URLs)
     end
 ```
 
-### 4.4.1. Le parcours de la requête textuelle
-Le premier flux, et le plus commun, est celui de la requête textuelle pure. Lorsqu'un utilisateur pose une question (via le web ou une mention bot), le système procède d'abord à un nettoyage du texte (normalisation). Si le contrôle thématique autorise le déclenchement, le texte est alors "vectorisé" par le service d'embedding. Ce vecteur devient la clé de recherche dans la base de données. Les articles les plus sémantiquement proches sont alors extraits pour servir de "mémoire contextuelle" à l'IA générative. Ce processus assure que la réponse n'est pas une simple invention de l'IA (hallucination) mais une synthèse de faits réels.
+### 4.4.1. Parcours de la requête textuelle
+Lorsqu'un utilisateur pose une question, le texte est normalisé et vectorisé. Si le contrôle thématique l'autorise, le vecteur est comparé au corpus via PostgreSQL. Les articles extraits servent alors de "mémoire contextuelle" au modèle Mistral-7B pour générer une réponse synthétique évitant toute hallucination.
 
-Le deuxième flux concerne les images. Le message contenant une image est reçu, le fichier est téléchargé, puis le texte est extrait par OCR. Lorsqu'une légende est présente, elle est fusionnée avec le résultat OCR afin de nourrir le filtre thématique. Le contenu obtenu rejoint ensuite la même chaîne de recherche et de génération que les requêtes textuelles si le message est accepté. Cette capacité est essentielle pour traiter les contenus partagés dans les messageries tout en évitant d'activer le bot sur des images hors sujet dans les groupes identifiables.
+### 4.4.2. Traitement des flux multimédias (OCR)
+Pour les images, le flux intègre une étape supplémentaire : le téléchargement du média suivi de l'extraction par **OCR**. Le contenu textuel obtenu rejoint ensuite la file de traitement classique (classification puis RAG), permettant de vérifier des captures d'écran ou des affiches suspectes partagées dans les groupes.
 
-Le troisième flux concerne l'ingestion de données. Le crawler collecte les articles des sources configurées, produit un fichier JSONL, puis les articles sont injectés dans le backend. À ce moment, ils sont nettoyés, vectorisés et stockés avec leurs métadonnées. Le système devient alors immédiatement capable de les retrouver dans ses recherches.
+### 4.4.3. Ingestion asynchrone (Crawler)
+Le crawler collecte les articles, produit un format **JSONL**, puis les réinjecte dans le service d'IA pour indexation. Ce flux asynchrone garantit que la base de connaissances reste alimentée en temps réel sans impacter les performances des requêtes utilisateurs.
 
-## 4.5. Maintenance et mise à jour du corpus
+## 4.5. Maintenance et évolution du corpus
+La force du projet réside dans sa capacité de mise à jour. Une opération de **ré-embedding** complète peut être lancée pour rafraîchir l'index sémantique. Le crawler automatique, quant à lui, assure la fraîcheur continue des données pour le moteur de recommandation.
 
-L'une des particularités du projet est sa capacité à se mettre à jour. Lorsqu'un nouveau modèle de vectorisation est adopté ou lorsqu'un volume important d'articles a été ajouté, une opération de ré-embedding peut être lancée. Cette opération recalcule les vecteurs de tous les documents concernés et maintient la cohérence du corpus.
+## 4.6. Résultats et limites
+Les tests valident la précision de la recherche vectorielle. Cependant, le système ne traite pas encore les **stories** WhatsApp ou les messages audios, ce qui constitue une opportunité pour les versions futures.
 
-Le crawler joue également un rôle de maintenance. En collectant régulièrement de nouveaux articles, il évite l'obsolescence de la base de connaissance et alimente en continu le moteur de recommandation. Cette logique est cruciale dans un projet centré sur l'actualité, car la valeur du système dépend de la fraîcheur de ses données.
-
-## 4.6. Résultats observables
-
-Les premiers tests montrent que le système est capable de retrouver des articles proches d'une requête même lorsque les mots utilisés diffèrent fortement de ceux du corpus. Cette capacité confirme l'intérêt de la recherche vectorielle. Les réponses produites par le modèle de langage sont plus utiles lorsqu'elles sont précédées par une bonne phase de récupération documentaire.
-
-L'intégration multicanale améliore également l'expérience utilisateur. Telegram permet une consultation rapide et simple, tandis que WhatsApp facilite l'usage dans les contextes où cette messagerie est dominante. L'ajout de l'OCR élargit enfin le champ d'application du système aux contenus visuels, et le filtrage thématique garantit que les groupes ne déclenchent le traitement automatique que pour les sujets visés.
-
-## 4.7. Limites actuelles
-
-Le système reste perfectible. La qualité des réponses dépend de la qualité des articles collectés, de la précision du crawl et de la diversité du corpus. Certains cas d'usage complexes nécessiteront peut-être des règles de filtrage supplémentaires, voire une meilleure structuration des prompts. De même, les performances OCR peuvent varier selon la qualité des images et la langue du texte extrait.
-
-Ces limites ne remettent pas en cause l'intérêt du prototype, mais elles indiquent des pistes d'amélioration pour les versions futures.
-
-## 4.8. Conclusion partielle
-
-Ce chapitre a montré comment les choix de conception ont été traduits en composants fonctionnels. L'architecture RAG, le crawler, la base vectorielle, l'OCR local et les intégrations Telegram et WhatsApp forment un ensemble cohérent, orienté vers la recherche d'information et la recommandation contextualisée. Le système obtenu constitue une base solide pour une évolution ultérieure vers des usages plus avancés, notamment la détection de tendances, l'analyse de qualité des sources et l'assistance éditoriale.
+## 4.7. Conclusion partielle
+La traduction technique des modèles montre que **RDC News Intelligence** est une solution complète, alliant collecte intelligente, recherche sémantique et génération robuste, le tout intégré de manière transparente dans les outils de communication quotidiens des utilisateurs congolais. Le système obtenu constitue une base solide pour une évolution ultérieure vers des usages plus avancés, notamment la détection de tendances, l'analyse de qualité des sources et l'assistance éditoriale.
