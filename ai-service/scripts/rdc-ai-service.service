@@ -1,0 +1,38 @@
+[Unit]
+Description=RDC News Intelligence - AI Service (FastAPI)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=rooney
+Group=rooney
+WorkingDirectory=/home/rooney/web/rooney-rdc/ai-service/current
+
+# Variables d'environnement
+EnvironmentFile=/home/rooney/web/rooney-rdc/ai-service/shared/.env
+
+# La commande de démarrage utilise le venv partagé
+ExecStart=/home/rooney/web/rooney-rdc/ai-service/venv/bin/uvicorn \
+    app.main:app \
+    --host 0.0.0.0 \
+    --port 8001 \
+    --workers 2 \
+    --log-level info \
+    --access-log
+
+# Redémarrage automatique en cas de crash
+Restart=always
+RestartSec=5
+
+# Logs vers journald (accessible via: journalctl -u rdc-ai-service -f)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rdc-ai-service
+
+# Limites de ressources
+LimitNOFILE=65536
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

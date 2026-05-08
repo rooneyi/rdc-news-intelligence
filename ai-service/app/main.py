@@ -1,12 +1,24 @@
 # FastAPI entrypoint
 # Variables d'environnement chargées automatiquement via app.core.config
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from app.services.load_dataset import attach_to_app
 from app.api.routes.articles import router as articles_router
 from app.api.routes.webhooks import router as webhooks_router
 from app.services.telegram_polling import run_telegram_polling
+from app.api.routes.webhooks import run_whatsapp_queue_polling
 
-app = FastAPI(title="RDC News Intelligence AI Service")
+app = FastAPI(
+    title="RDC News Intelligence AI Service",
+    description="Service d'intelligence artificielle pour la détection de désinformation — RDC News",
+    version="1.0.0",
+)
+
+# ── Health check endpoint (utilisé par le CI/CD) ──────────────────────────────
+@app.get("/health", tags=["Health"], summary="Service health check")
+async def health_check():
+    """Retourne le statut du service. Utilisé par le workflow de déploiement."""
+    return JSONResponse(content={"status": "ok", "service": "rdc-ai-service"})
 
 # Attach dataset loader to startup; run in background by default
 attach_to_app(app, background=True, limit=None)
@@ -32,6 +44,10 @@ async def startup_event():
     # Sinon, si un webhook est déjà branché, on peut rejouer d'anciens messages.
     if os.getenv("ENABLE_TELEGRAM_POLLING", "").lower() in {"1", "true", "yes"}:
         asyncio.create_task(run_telegram_polling())
+
+    # Worker local: recupere les messages WhatsApp depuis le backend heberge (mode pull).
+    if os.getenv("ENABLE_WHATSAPP_QUEUE_POLLING", "").lower() in {"1", "true", "yes"}:
+        asyncio.create_task(run_whatsapp_queue_polling())
 
 @app.on_event("shutdown")
 def shutdown_event():
