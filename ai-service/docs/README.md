@@ -42,54 +42,68 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ## 📖 Documentation API
 Une fois lancé, accédez à la documentation interactive sur : [http://localhost:8000/docs](http://localhost:8000/docs)
 
-## 🌐 Déploiement sur `rooney.inafrica.tech`
+## 🔁 Architecture proxy WhatsApp (prod -> local -> prod -> Meta)
 
-Pour que les webhooks Telegram et WhatsApp utilisent ton domaine, l'API FastAPI doit être exposée publiquement en HTTPS.
+Ce mode permet de garder le webhook Meta sur le backend heberge, tout en traitant la logique IA en local.
 
-### 1. Lancer FastAPI sur le serveur
+### 1) Variables sur le backend heberge (celui configure dans Meta)
 
-```bash
-cd /opt/rdc-news-intelligence/ai-service
-source .env/bin/activate
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+```env
+# Forward des payloads recus de Meta vers le local
+WHATSAPP_FORWARD_URL=https://<ton-tunnel-local>/webhooks/whatsapp
+WHATSAPP_FORWARD_TOKEN=secret-forward
+WHATSAPP_FORWARD_TIMEOUT=10
+
+# Ne pas traiter localement sur le serveur heberge (evite double reponse)
+WHATSAPP_WEBHOOK_PROXY_ONLY=true
+
+# Endpoint qui recoit les reponses remontees depuis le local
+WHATSAPP_REPLY_RELAY_TOKEN=secret-relay
 ```
 
-### 2. Mettre un reverse proxy HTTPS devant FastAPI
+### 2) Variables sur le local
 
-Configure Nginx, Caddy ou Traefik pour publier le service sur :
+```env
+# Accepter les payloads forwarded par le backend heberge
+WHATSAPP_FORWARD_TOKEN=secret-forward
 
-```text
-https://rooney.inafrica.tech
+# Remonter les reponses vers le backend heberge (qui envoie ensuite a Meta)
+WHATSAPP_REPLY_RELAY_URL=https://<ton-backend-heberge>/webhooks/whatsapp/reply-relay
+WHATSAPP_REPLY_RELAY_TOKEN=secret-relay
+WHATSAPP_REPLY_RELAY_TIMEOUT=15
 ```
 
-Le proxy doit rediriger vers :
+Notes:
+- Le header `X-RDC-Forwarded: true` est ajoute automatiquement pour eviter les boucles.
+- Le backend heberge expose `POST /webhooks/whatsapp/reply-relay` pour envoyer a WhatsApp Cloud API.
 
-```text
-http://127.0.0.1:8000
+## ✅ Mode sans tunnel (PULL) recommande
+
+Si ton local n'est pas exposable publiquement, utilise ce mode:
+
+1. Meta -> `https://rooney-rdc.rooneykalumba.tech/webhooks/whatsapp`
+2. Le backend heberge met le payload en file memoire.
+3. Le local fait du polling sur `POST /webhooks/whatsapp/queue/pop`.
+4. Le local traite puis remonte les reponses vers `POST /webhooks/whatsapp/reply-relay`.
+
+### Variables backend heberge
+
+```env
+WHATSAPP_WEBHOOK_PROXY_ONLY=true
+WHATSAPP_QUEUE_TOKEN=secret-queue
+WHATSAPP_REPLY_RELAY_TOKEN=secret-relay
 ```
 
-### 3. Pointer les webhooks vers le domaine public
+### Variables local
 
-- Telegram webhook: `https://rooney.inafrica.tech/webhooks/telegram`
-- WhatsApp webhook: `https://rooney.inafrica.tech/webhooks/whatsapp`
+```env
+ENABLE_WHATSAPP_QUEUE_POLLING=true
+WHATSAPP_QUEUE_POP_URL=https://rooney-rdc.rooneykalumba.tech/webhooks/whatsapp/queue/pop
+WHATSAPP_QUEUE_TOKEN=secret-queue
+WHATSAPP_QUEUE_POLL_INTERVAL=2
+WHATSAPP_QUEUE_TIMEOUT=15
 
-### 4. Variables d'environnement à prévoir
-
-```bash
-OLLAMA_HOST=http://127.0.0.1:11434
-TELEGRAM_BOT_TOKEN=...
-WHATSAPP_TOKEN=...
-WHATSAPP_PHONE_ID=...
-WHATSAPP_VERIFY_TOKEN=...
-ENABLE_TELEGRAM_POLLING=false
+WHATSAPP_REPLY_RELAY_URL=https://rooney-rdc.rooneykalumba.tech/webhooks/whatsapp/reply-relay
+WHATSAPP_REPLY_RELAY_TOKEN=secret-relay
+WHATSAPP_REPLY_RELAY_TIMEOUT=15
 ```
-
-### 5. Vérification rapide
-
-```bash
-curl https://rooney.inafrica.tech/docs
-curl -X POST https://rooney.inafrica.tech/webhooks/telegram
-curl -X POST https://rooney.inafrica.tech/webhooks/whatsapp
-```
-
-Si tu veux, je peux aussi te générer un fichier Nginx/Caddy prêt à coller pour ce domaine.

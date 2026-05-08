@@ -1,0 +1,73 @@
+name: 🚀 Deploy RDC News Intelligence
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*.*.*'          # ex: v1.2.3
+  workflow_dispatch:      # déclenchement manuel depuis GitHub UI
+    inputs:
+      version:
+        description: 'Version to deploy (ex: v1.0.0)'
+        required: false
+        default: 'manual'
+      service:
+        description: 'Service to deploy'
+        required: true
+        default: 'ai-service'
+        type: choice
+        options:
+          - ai-service
+          - all
+
+# Evite les déploiements concurrents sur le même environnement
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  # ─────────────────────────────────────────────
+  # Calcul de la version (tag git ou SHA court)
+  # ─────────────────────────────────────────────
+  versioning:
+    name: Compute Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute version string
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION="${{ github.ref_name }}"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.version }}" != "manual" ]]; then
+            VERSION="${{ inputs.version }}"
+          else
+            SHORT_SHA=$(git rev-parse --short HEAD)
+            BRANCH=$(echo "${{ github.ref_name }}" | tr '/' '-')
+            VERSION="${BRANCH}-${SHORT_SHA}-$(date +'%Y%m%d%H%M')"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "📦 Version: $VERSION"
+
+  # ─────────────────────────────────────────────
+  # Déploiement du service FastAPI (AI Service)
+  # ─────────────────────────────────────────────
+  deploy-ai-service:
+    name: AI Service
+    needs: versioning
+    if: |
+      github.event_name != 'workflow_dispatch' ||
+      inputs.service == 'ai-service' ||
+      inputs.service == 'all'
+    uses: ./.github/workflows/deploy-ai-service.yml
+    with:
+      version: ${{ needs.versioning.outputs.version }}
+    secrets: inherit

@@ -74,7 +74,27 @@
     "/tmp/rdc-next-dev-92829/types/**/*.ts",
     "/tmp/rdc-next-dev-92829/dev/types/**/*.ts",
     "/tmp/rdc-next-dev-168170/types/**/*.ts",
-    "/tmp/rdc-next-dev-168170/dev/types/**/*.ts"
+    "/tmp/rdc-next-dev-168170/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-15824/types/**/*.ts",
+    "/tmp/rdc-next-dev-15824/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-8341/types/**/*.ts",
+    "/tmp/rdc-next-dev-8341/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-8656/types/**/*.ts",
+    "/tmp/rdc-next-dev-8656/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-47834/types/**/*.ts",
+    "/tmp/rdc-next-dev-47834/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-58709/types/**/*.ts",
+    "/tmp/rdc-next-dev-58709/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-56756/types/**/*.ts",
+    "/tmp/rdc-next-dev-56756/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-20233/types/**/*.ts",
+    "/tmp/rdc-next-dev-20233/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-11944/types/**/*.ts",
+    "/tmp/rdc-next-dev-11944/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-34303/types/**/*.ts",
+    "/tmp/rdc-next-dev-34303/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-94926/types/**/*.ts",
+    "/tmp/rdc-next-dev-94926/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"
