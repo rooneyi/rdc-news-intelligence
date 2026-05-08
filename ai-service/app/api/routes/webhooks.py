@@ -138,7 +138,7 @@ async def process_telegram_message(chat_id: str, query: str):
         logger.error(f"Erreur streaming Telegram: {e}")
 
 
-async def _send_whatsapp_text_direct(phone_number: str, body: str) -> None:
+async def _send_whatsapp_text_direct(phone_number: str, body: str) -> dict:
     whatsapp_token = os.getenv("WHATSAPP_TOKEN")
     phone_id = os.getenv("WHATSAPP_PHONE_ID")
     if not whatsapp_token or not phone_id:
@@ -154,8 +154,30 @@ async def _send_whatsapp_text_direct(phone_number: str, body: str) -> None:
         "text": {"body": body},
     }
 
-    async with httpx.AsyncClient() as client:
-        await client.post(url, json=payload, headers=headers)
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(url, json=payload, headers=headers)
+        raw_body = resp.text[:800]
+        if resp.status_code >= 400:
+            logger.error(
+                "[WhatsApp] Echec envoi Meta (status=%s, to=%s, body=%s)",
+                resp.status_code,
+                phone_number,
+                raw_body,
+            )
+            raise HTTPException(status_code=502, detail=f"Echec envoi WhatsApp Meta: {raw_body}")
+
+        try:
+            data = resp.json()
+        except ValueError:
+            logger.error("[WhatsApp] Reponse Meta non-JSON: %s", raw_body)
+            raise HTTPException(status_code=502, detail="Réponse Meta invalide (non JSON)")
+
+        if data.get("error"):
+            logger.error("[WhatsApp] Erreur API Meta: %s", data["error"])
+            raise HTTPException(status_code=502, detail=f"Erreur API Meta: {data['error']}")
+
+        logger.info("[WhatsApp] Message envoye a Meta (to=%s)", phone_number)
+        return data
 
 
 async def _send_whatsapp_text(phone_number: str, body: str) -> None:
@@ -179,6 +201,13 @@ async def _send_whatsapp_text(phone_number: str, body: str) -> None:
     try:
         async with httpx.AsyncClient(timeout=timeout_seconds) as client:
             resp = await client.post(reply_relay_url, json=payload, headers=headers)
+            if resp.status_code >= 400:
+                logger.error(
+                    "[WhatsApp] Relay reponse en echec (status=%s, body=%s)",
+                    resp.status_code,
+                    resp.text[:800],
+                )
+                return
             logger.info(
                 "[WhatsApp] Reponse relayee -> %s (status=%s)",
                 reply_relay_url,
@@ -366,7 +395,7 @@ async def run_whatsapp_queue_polling() -> None:
                     await asyncio.sleep(0.2)
                     continue
         except Exception as e:
-            logger.error("[WhatsApp Queue] Erreur polling: %s", e)
+            logger.error("[WhatsApp Queue] Erreur polling (%s): %r", type(e).__name__, e)
 
         await asyncio.sleep(poll_interval)
 
@@ -587,8 +616,8 @@ async def whatsapp_reply_relay(request: Request):
     if not phone_number or not body:
         raise HTTPException(status_code=422, detail="Champs 'to' et 'body' requis")
 
-    await _send_whatsapp_text_direct(phone_number, body)
-    return {"status": "sent"}
+    meta_response = await _send_whatsapp_text_direct(phone_number, body)
+    return {"status": "sent", "meta": meta_response}
 
 @router.get("/whatsapp")
 async def whatsapp_verify(request: Request):

@@ -15,7 +15,22 @@ class LLMService:
         self.model = model or os.getenv("OLLAMA_MODEL", "mistral")
         self.host = host or os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
         # On met un timeout très large (5 min) pour éviter les erreurs de chargement du modèle
-        self.timeout = timeout or 300 
+        self.timeout = timeout or 300
+        # Paramètres mémoire/performance (garde le même modèle, réduit la RAM utilisée).
+        self.num_ctx = int(os.getenv("OLLAMA_NUM_CTX", "1024"))
+        self.num_batch = int(os.getenv("OLLAMA_NUM_BATCH", "32"))
+        self.msg_num_predict = int(os.getenv("OLLAMA_NUM_PREDICT_MSG", "120"))
+        self.web_num_predict = int(os.getenv("OLLAMA_NUM_PREDICT_WEB", "220"))
+        # Modèles de secours (optionnels) en cas d'échec sur le modèle principal.
+        raw_fallbacks = os.getenv("OLLAMA_FALLBACK_MODELS", "mistral:latest,mistral")
+        self.fallback_models = [m.strip() for m in raw_fallbacks.split(",") if m.strip()]
+
+    def _model_candidates(self) -> list[str]:
+        candidates: list[str] = []
+        for model_name in [self.model, *self.fallback_models]:
+            if model_name and model_name not in candidates:
+                candidates.append(model_name)
+        return candidates
 
     def _build_prompt(self, query: str, articles: List[ArticleOut], channel: str = "web") -> str:
         # On réduit un peu la taille du contexte pour accélérer Mistral
@@ -57,41 +72,61 @@ Articles de référence :
         prompt = self._build_prompt(query, articles, channel)
         url = f"{self.host}/api/generate"
         
-        try:
-            # On limite le nombre de tokens générés pour réduire le temps de réponse.
-            # Réponse plus courte pour messageries.
-            max_tokens = 256 if channel == "web" else 160
-            # Utilisation d'un client avec timeout désactivé pour la lecture du stream
-            async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout, read=None)) as client:
-                async with client.stream(
-                    "POST",
-                    url,
-                    json={
-                        "model": self.model,
-                        "prompt": prompt,
-                        "stream": True,
-                        "num_predict": max_tokens,
-                    },
-                ) as response:
-                    if response.status_code != 200:
-                        yield f"Erreur Ollama ({response.status_code})"
-                        return
+        # On limite le nombre de tokens générés pour réduire le temps de réponse.
+        # Réponse plus courte pour messageries.
+        max_tokens = self.web_num_predict if channel == "web" else self.msg_num_predict
+        attempts = self._model_candidates()
+        last_error = "Erreur inconnue"
 
-                    async for line in response.aiter_lines():
-                        if not line: continue
-                        try:
-                            data = json.loads(line)
-                            chunk = data.get("response", "")
-                            if chunk:
-                                yield chunk
-                            if data.get("done"):
-                                break
-                        except json.JSONDecodeError:
+        for idx, model_name in enumerate(attempts):
+            try:
+                # Utilisation d'un client avec timeout désactivé pour la lecture du stream
+                async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout, read=None)) as client:
+                    async with client.stream(
+                        "POST",
+                        url,
+                        json={
+                            "model": model_name,
+                            "prompt": prompt,
+                            "stream": True,
+                            "num_predict": max_tokens,
+                            "options": {
+                                "temperature": 0.2,
+                                "num_ctx": self.num_ctx,
+                                "num_batch": self.num_batch,
+                            },
+                        },
+                    ) as response:
+                        if response.status_code != 200:
+                            error_body = await response.aread()
+                            last_error = (
+                                f"Ollama {response.status_code} sur modèle '{model_name}': "
+                                f"{error_body.decode(errors='ignore')[:300]}"
+                            )
+                            logger.error("[LLMService] %s", last_error)
                             continue
-                            
-        except Exception as e:
-            logger.error(f"Ollama connection error: {e}")
-            yield f"\n[Erreur de connexion avec Mistral : {str(e)}]"
+
+                        logger.info("[LLMService] Génération Ollama avec modèle '%s'", model_name)
+                        async for line in response.aiter_lines():
+                            if not line:
+                                continue
+                            try:
+                                data = json.loads(line)
+                                chunk = data.get("response", "")
+                                if chunk:
+                                    yield chunk
+                                if data.get("done"):
+                                    return
+                            except json.JSONDecodeError:
+                                continue
+            except Exception as e:
+                last_error = f"Ollama connection error sur '{model_name}': {e}"
+                logger.error("[LLMService] %s", last_error)
+                # Petit backoff entre les tentatives
+                if idx < len(attempts) - 1:
+                    continue
+
+        yield f"❌ Erreur Ollama: {last_error}"
 
     async def summarize_full(self, query: str, articles: List[ArticleOut], channel: str = "web") -> str:
         """Gère la réponse complète sans streaming (utile pour les Webhooks WhatsApp/Telegram)."""
