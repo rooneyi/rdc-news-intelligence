@@ -109,6 +109,38 @@ sudo systemctl start rdc-ai-service
 sudo systemctl status rdc-ai-service
 ```
 
+### Alternative — PM2 (si tu n’utilises pas systemd pour l’IA)
+
+Le dépôt fournit [`ai-service/ecosystem.config.cjs`](../ecosystem.config.cjs). Sur le VPS :
+
+```bash
+cd /chemin/vers/ai-service   # ex. .../rdc-news-intelligence/ai-service
+```
+
+1. Vérifie que le **venv** existe et adapte si besoin :
+   - par défaut le fichier utilise `.env/bin/python` ;
+   - sinon exporte `RDC_AI_PYTHON=/chemin/vers/venv/bin/python`.
+
+2. Le port par défaut est **8001** (aligné avec la section Nginx ci‑dessous). Pour changer :
+   `export APP_PORT=8001`
+
+3. Démarre et persiste :
+
+```bash
+pm2 start ecosystem.config.cjs
+pm2 save
+pm2 startup    # une fois : suivre la commande affichée pour l’auto-start au boot
+```
+
+Contrôle :
+
+```bash
+curl -sS http://127.0.0.1:8001/health
+pm2 logs rdc-ai-service --lines 80
+```
+
+**À ne pas faire :** lancer en parallèle **systemd `rdc-ai-service`** et **PM2** sur le même port — un seul superviseur pour ce processus.
+
 ---
 
 ## 4. Configuration Nginx (reverse proxy)
