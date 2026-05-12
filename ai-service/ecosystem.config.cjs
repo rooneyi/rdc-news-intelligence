@@ -3,8 +3,8 @@
  *
  * Prérequis :
  * - Être dans le dossier `ai-service` (là où se trouvent `app/` et ce fichier).
- * - Virtualenv Python : par défaut `.env/bin/python` (comme en local). Sinon édite `script` ci‑dessous
- *   (`venv/bin/python`, `.venv/bin/python`, etc.).
+ * - Virtualenv Python : le fichier choisit automatiquement le premier existant parmi
+ *   `venv/`, `.venv/`, `.env/` (dans cet ordre). Sinon : `export RDC_AI_PYTHON=/chemin/vers/bin/python`
  * - Fichier `app/core/config.py` charge `ai-service/.env_file` — à renseigner sur le VPS.
  *
  * Commandes :
@@ -17,14 +17,32 @@
  *
  * Nginx doit faire proxy_pass vers le même port que `APP_PORT` (défaut 8001).
  */
+const fs = require("fs");
 const path = require("path");
 
 const root = __dirname;
 const port = process.env.APP_PORT || "8001";
 
-/** Interpréteur Python du venv — adapte si ton venv n’est pas `.env` */
-const pythonBin =
-  process.env.RDC_AI_PYTHON || path.join(root, ".env", "bin", "python");
+function resolvePythonBin(base) {
+  const explicit = process.env.RDC_AI_PYTHON;
+  if (explicit && fs.existsSync(explicit)) {
+    return explicit;
+  }
+  const dirs = ["venv", ".venv", ".env"];
+  for (const d of dirs) {
+    const candidate = path.join(base, d, "bin", "python");
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  console.error(
+    "[ecosystem] Aucun Python trouvé dans venv/.venv/.env. Crée-en un :\n" +
+      `  cd "${base}" && python3 -m venv venv && ./venv/bin/pip install -r requirements.txt`,
+  );
+  return path.join(base, "venv", "bin", "python");
+}
+
+const pythonBin = resolvePythonBin(root);
 
 module.exports = {
   apps: [
