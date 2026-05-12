@@ -18,7 +18,7 @@ app = FastAPI(
 )
 
 app.state.bootstrap_ok = False
-app.state.bootstrap_error: str | None = None
+app.state.bootstrap_error = None
 
 
 @app.get("/health", tags=["Health"], summary="Service health check")
