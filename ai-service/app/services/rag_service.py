@@ -42,9 +42,10 @@ class RAGService:
         self.min_similarity_messaging = float(os.getenv("RAG_MIN_SIMILARITY_MSG", "0.40"))
 
     def _filter_relevant_articles(self, articles: list, channel: str) -> list:
+        # Web : même seuil que messagerie pour des sources aussi pertinentes que WhatsApp/Telegram.
         min_similarity = (
             self.min_similarity_messaging
-            if channel in {"whatsapp", "telegram"}
+            if channel in {"whatsapp", "telegram", "web"}
             else self.min_similarity_default
         )
         filtered = [
@@ -71,9 +72,19 @@ class RAGService:
         C'est cette méthode qui permet à Mistral de répondre sans timeout.
         """
         try:
+            # Même logique que generate_full_answer : moins d’articles pour messagerie ; web aligné (top_k réduit).
+            effective_top_k = top_k
+            if channel in {"telegram", "whatsapp"}:
+                effective_top_k = min(top_k, 3)
+            elif channel == "web":
+                effective_top_k = min(
+                    top_k,
+                    int(os.getenv("RAG_WEB_TOP_K", os.getenv("WHATSAPP_TOP_K", "3"))),
+                )
+
             # 1. Recherche des articles (Très rapide)
             query_embedding = self.embedding_service.generate(query)
-            articles = self.retrieval_service.search(query_embedding, limit=top_k)
+            articles = self.retrieval_service.search(query_embedding, limit=effective_top_k)
             articles = self._filter_relevant_articles(articles, channel)
 
             if not articles:
@@ -108,10 +119,14 @@ class RAGService:
     async def generate_full_answer(self, query: str, top_k: int = 5, channel: str = "web") -> str:
         """Génère une réponse RAG complète en un seul bloc (pour les Webhooks)."""
         try:
-            # Pour les canaux messagerie, on réduit légèrement le nombre d'articles
-            # pour aller plus vite (contexte plus court pour le LLM).
+            # Messagerie + web : même plafond d’articles (voir RAG_WEB_TOP_K).
             if channel in ["telegram", "whatsapp"]:
                 top_k = min(top_k, 3)
+            elif channel == "web":
+                top_k = min(
+                    top_k,
+                    int(os.getenv("RAG_WEB_TOP_K", os.getenv("WHATSAPP_TOP_K", "3"))),
+                )
 
             query_embedding = self.embedding_service.generate(query)
             articles = self.retrieval_service.search(query_embedding, limit=top_k)
