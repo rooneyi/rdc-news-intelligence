@@ -107,8 +107,9 @@ export default function ClientPage() {
           summary += ev.text ?? "";
           update(summary, `${srcCount} source(s)`);
         } else if (ev.type === "error") {
-          setError(ev.message ?? "Erreur IA.");
-          update(summary || "Erreur.", "Erreur");
+          const msg = ev.message ?? "Erreur IA.";
+          setError(msg);
+          update(msg, "Erreur");
         } else if (ev.type === "done") {
           update(summary || "Aucune réponse générée.", `${srcCount} source(s)`);
         }

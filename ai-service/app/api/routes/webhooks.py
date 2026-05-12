@@ -689,9 +689,10 @@ async def process_whatsapp_image(
         return
 
     base_headers = {"Authorization": f"Bearer {whatsapp_token}"}
+    media_timeout = float(os.getenv("WHATSAPP_MEDIA_TIMEOUT", "90"))
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=media_timeout) as client:
             # 1. Récupérer l'URL du média
             meta_resp = await client.get(
                 f"https://graph.facebook.com/v17.0/{media_id}", headers=base_headers
@@ -718,12 +719,36 @@ async def process_whatsapp_image(
                 )
                 return
 
-            # 2. Télécharger l'image
+            # 2. Télécharger les octets de l'image (URL signée Meta, courte durée de vie)
             img_resp = await client.get(media_url, headers=base_headers)
+            if img_resp.status_code >= 400 or not img_resp.content:
+                logger.error(
+                    "[WhatsApp] Téléchargement binaire image refusé (status=%s, octets=%s)",
+                    img_resp.status_code,
+                    len(img_resp.content or b""),
+                )
+                await _send_whatsapp_text(
+                    phone_number,
+                    "❌ Meta n'a pas renvoyé le fichier image (réessaie : les liens média expirent vite).",
+                )
+                return
+
             image_bytes = img_resp.content
 
-            # 3. OCR local
-            extracted_text = ocr_service.extract_text(image_bytes)
+            # 3. OCR local (Tesseract + Pillow sur la machine qui exécute ce code)
+            try:
+                extracted_text = ocr_service.extract_text(image_bytes)
+            except Exception as ocr_exc:  # noqa: BLE001
+                logger.exception("[WhatsApp] Échec OCR (image média_id=%s): %s", media_id, ocr_exc)
+                await _send_whatsapp_text(
+                    phone_number,
+                    "❌ Lecture OCR impossible. Sur la machine qui traite les images, installe Tesseract "
+                    "(ex. Debian/Ubuntu : "
+                    "`sudo apt install tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng`) "
+                    "et vérifie Python `pillow` + `pytesseract`.",
+                )
+                return
+
             combined_query = _build_combined_message(caption, extracted_text)
             if not combined_query:
                 logger.info("[WhatsApp] Aucun texte exploitable extrait de l'image pour %s", phone_number)
