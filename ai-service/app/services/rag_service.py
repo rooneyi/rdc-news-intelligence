@@ -8,19 +8,27 @@ from app.services.llm_service import LLMService
 logger = logging.getLogger(__name__)
 
 
-def _format_rag_error(exc: BaseException) -> str:
-    raw = str(exc)
-    low = raw.lower()
-    if (
+def _is_postgres_connection_error(text: str) -> bool:
+    low = text.lower()
+    return (
         "database connection failed" in low
         or "password authentication failed" in low
+        or "authentification par mot de passe" in low
+        or "authentication failed" in low
         or "could not connect to server" in low
         or ("fatal" in low and "postgres" in low)
-    ):
+        or ("connexion" in low and "postgresql" in low)
+    )
+
+
+def _format_rag_error(exc: BaseException) -> str:
+    """Même préfixe utilisateur qu’avant ; précision PostgreSQL si l’exception le permet."""
+    raw = str(exc)
+    if _is_postgres_connection_error(raw):
         return (
-            "PostgreSQL refuse la connexion (mot de passe utilisateur, ou instance qui n’écoute pas sur ce host/port). "
-            "Vérifie ai-service/.env_file (DB_*), redémarre uvicorn, lance `python scripts/check_db_connection.py`. "
-            f"Détail : {raw}"
+            "Désolé, Mistral est trop sollicité : "
+            "[PostgreSQL — connexion / mot de passe / DB_* dans ai-service/.env_file] "
+            f"{raw}"
         )
     return f"Désolé, Mistral est trop sollicité : {raw}"
 
@@ -119,4 +127,11 @@ class RAGService:
 
         except Exception as e:
             logger.error(f"Erreur critique dans le flux complet RAG: {e}")
-            return f"⚠️ {_format_rag_error(e)}"
+            detail = str(e)
+            if _is_postgres_connection_error(detail):
+                detail = (
+                    "[PostgreSQL — vérifie DB_* / .env_file, "
+                    "`python scripts/check_db_connection.py`] "
+                    + detail
+                )
+            return f"⚠️ Une erreur interne est survenue lors de l'analyse (Mistral indisponible : {detail})"

@@ -2,6 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 import json
 import logging
+import time
 from pathlib import Path
 from app.services.article_service import create_article, search_similar, save_crawled_article
 from app.services.embedding_service import EmbeddingService
@@ -104,17 +105,35 @@ async def rag_query(payload: RAGRequest):
     Cette info permet de router la réponse au bon endroit si besoin.
     """
     channel = getattr(payload, "channel", "web")
-    logger.info(f"[RAG] Requête depuis channel={channel}: {payload.query[:80]}")
-    
+    logger.info(
+        "[RAG] ← req channel=%s top_k=%s query=%r",
+        channel,
+        payload.top_k,
+        (payload.query or "")[:500],
+    )
+
+    t0 = time.perf_counter()
     result = rag_service.generate_answer_stream(payload.query, payload.top_k, channel=channel)
     summary = ""
     sources = []
+    pipeline_error = False
     async for chunk in result:
         if chunk.get("type") == "summary_chunk":
             summary += chunk.get("text", "")
         elif chunk.get("type") == "sources":
             sources = chunk.get("sources", [])
-    
+        elif chunk.get("type") == "error":
+            summary = chunk.get("message") or summary
+            pipeline_error = True
+
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+    logger.info(
+        "[RAG] → res %.1fms chars=%s sources=%s erreur_pipeline=%s",
+        elapsed_ms,
+        len(summary),
+        len(sources),
+        pipeline_error,
+    )
     logger.info(f"[RAG] Réponse complète ({len(summary)} chars, {len(sources)} sources)")
     return {"summary": summary or "Mistral n'a pas pu générer de réponse.", "sources": sources, "query": payload.query}
 
@@ -143,6 +162,8 @@ async def rag_from_image(file: UploadFile = File(...)):
             summary += chunk.get("text", "")
         elif chunk.get("type") == "sources":
             sources = chunk.get("sources", [])
+        elif chunk.get("type") == "error":
+            summary = chunk.get("message") or summary
 
     return {
         "summary": summary or "Mistral n'a pas pu générer de réponse.",
@@ -157,18 +178,46 @@ async def rag_query_stream(payload: RAGRequest):
     C'est ici que la magie de Mistral opère en temps réel.
     """
     async def event_generator():
+        channel = getattr(payload, "channel", "web")
+        q_preview = (payload.query or "")[:500]
+        t0 = time.perf_counter()
+        ndjson_lines = 0
+        last_event: str | None = None
+        saw_error = False
+        logger.info(
+            "[RAG/stream] ← req channel=%s top_k=%s query=%r",
+            channel,
+            payload.top_k,
+            q_preview,
+        )
         try:
             first = True
-            channel = getattr(payload, "channel", "web")
             async for chunk in rag_service.generate_answer_stream(payload.query, payload.top_k, channel=channel):
+                last_event = chunk.get("type")
+                if last_event == "error":
+                    saw_error = True
+                ndjson_lines += 1
                 yield json.dumps(chunk) + "\n"
                 if first:
                     import sys
+
                     sys.stdout.flush()
                     first = False
         except Exception as e:
-            logger.error(f"Streaming route error: {e}")
+            logger.exception("[RAG/stream] exception dans le générateur: %s", e)
+            saw_error = True
+            last_event = "error"
+            ndjson_lines += 1
             yield json.dumps({"type": "error", "message": str(e)}) + "\n"
+        finally:
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            logger.info(
+                "[RAG/stream] → fin %.1fms lignes_ndjson=%s dernier_event=%s erreur=%s",
+                elapsed_ms,
+                ndjson_lines,
+                last_event,
+                saw_error,
+            )
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 

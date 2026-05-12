@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 from fastapi import APIRouter, Request, BackgroundTasks, HTTPException, Response
@@ -68,6 +69,14 @@ def _pop_whatsapp_chunk(
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _whatsapp_credentials() -> tuple[str, str]:
+    """Token et phone id sans espaces / retours ligne (erreurs Meta fréquentes si .env mal collé)."""
+    return (
+        (os.getenv("WHATSAPP_TOKEN") or "").strip(),
+        (os.getenv("WHATSAPP_PHONE_ID") or "").strip(),
+    )
 ocr_service = OCRService()
 topic_gate_service = TopicGateService()
 _whatsapp_queue: deque[dict] = deque()
@@ -228,8 +237,7 @@ async def process_telegram_message(chat_id: str, query: str):
 
 
 async def _send_whatsapp_text_direct(phone_number: str, body: str) -> dict:
-    whatsapp_token = os.getenv("WHATSAPP_TOKEN")
-    phone_id = os.getenv("WHATSAPP_PHONE_ID")
+    whatsapp_token, phone_id = _whatsapp_credentials()
     if not whatsapp_token or not phone_id:
         logger.error("Tokens WhatsApp manquants")
         return
@@ -276,8 +284,7 @@ async def _whatsapp_mark_read_and_show_typing(wa_message_id: str | None) -> None
     """
     if not (wa_message_id and str(wa_message_id).strip()):
         return
-    whatsapp_token = os.getenv("WHATSAPP_TOKEN")
-    phone_id = os.getenv("WHATSAPP_PHONE_ID")
+    whatsapp_token, phone_id = _whatsapp_credentials()
     if not whatsapp_token or not phone_id:
         return
     url = f"https://graph.facebook.com/v17.0/{phone_id}/messages"
@@ -516,6 +523,9 @@ async def _dispatch_whatsapp_payload(payload: dict, background_tasks: Background
         value = changes.get("value", {})
 
         if "messages" not in value:
+            logger.info(
+                "[WhatsApp] Payload sans messages (accusé livraison / statut) — pas de RAG."
+            )
             return
 
         msg = value["messages"][0]
@@ -637,8 +647,7 @@ async def process_whatsapp_message(
     require_topic_gate: bool = False,
     wa_message_id: str | None = None,
 ):
-    whatsapp_token = os.getenv("WHATSAPP_TOKEN")
-    phone_id = os.getenv("WHATSAPP_PHONE_ID")
+    whatsapp_token, phone_id = _whatsapp_credentials()
     if not whatsapp_token or not phone_id:
         logger.error("Tokens WhatsApp manquants")
         return
@@ -674,8 +683,7 @@ async def process_whatsapp_image(
     wa_message_id: str | None = None,
 ):
     """Traite une image reçue sur WhatsApp : OCR local puis RAG texte."""
-    whatsapp_token = os.getenv("WHATSAPP_TOKEN")
-    phone_id = os.getenv("WHATSAPP_PHONE_ID")
+    whatsapp_token, phone_id = _whatsapp_credentials()
     if not whatsapp_token or not phone_id:
         logger.error("Tokens WhatsApp manquants")
         return
@@ -829,8 +837,22 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Webhook POST pour WhatsApp Cloud API : Reçoit les messages.
     """
-    payload = await request.json()
-    logger.info(f"WhatsApp webhook reçu : {payload}")
+    peer = request.client.host if request.client else "?"
+    logger.info("[WhatsApp] ← POST /webhooks/whatsapp (client=%s)", peer)
+
+    try:
+        payload = await request.json()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[WhatsApp] Corps JSON invalide ou vide : %s", exc)
+        raise HTTPException(status_code=400, detail="JSON invalide") from exc
+
+    try:
+        preview = json.dumps(payload, ensure_ascii=False)
+    except Exception:
+        preview = str(payload)[:800]
+    if len(preview) > 1200:
+        preview = preview[:1200] + "…"
+    logger.info("[WhatsApp] Payload reçu (aperçu): %s", preview)
     is_forwarded_payload = request.headers.get("X-RDC-Forwarded", "").lower() == "true"
     expected_forward_token = os.getenv("WHATSAPP_FORWARD_TOKEN", "").strip()
     received_forward_token = request.headers.get("X-RDC-Forward-Token", "").strip()
@@ -866,6 +888,11 @@ async def whatsapp_queue_pop(request: Request):
 
     item = await _pop_whatsapp_payload()
     remaining = await _get_whatsapp_queue_size()
+    logger.info(
+        "[WhatsApp Queue] → POST /webhooks/whatsapp/queue/pop item=%s remaining=%s",
+        "oui" if item else "vide",
+        remaining,
+    )
     return {"status": "ok", "item": item, "remaining": remaining}
 
 
