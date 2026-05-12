@@ -117,9 +117,10 @@ Le dépôt fournit [`ai-service/ecosystem.config.cjs`](../ecosystem.config.cjs).
 cd /chemin/vers/ai-service   # ex. .../rdc-news-intelligence/ai-service
 ```
 
-1. Vérifie que le **venv** existe et adapte si besoin :
-   - par défaut le fichier utilise `.env/bin/python` ;
-   - sinon exporte `RDC_AI_PYTHON=/chemin/vers/venv/bin/python`.
+1. Crée un **venv** dans `ai-service` si besoin :  
+   `python3 -m venv venv && ./venv/bin/pip install -r requirements.txt`  
+   Le fichier `ecosystem.config.cjs` détecte automatiquement `venv/`, `.venv/` ou `.env/`.  
+   Sinon : `export RDC_AI_PYTHON=/chemin/vers/bin/python`.
 
 2. Le port par défaut est **8001** (aligné avec la section Nginx ci‑dessous). Pour changer :
    `export APP_PORT=8001`
