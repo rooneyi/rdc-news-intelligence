@@ -9,6 +9,25 @@ import os
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+
+def _configure_logging() -> None:
+    """Sans ça, les `logger.info` des routes / services ne sortent souvent pas (niveau WARNING par défaut)."""
+    if os.getenv("RDC_SKIP_LOGGING_CONFIG", "").lower() in {"1", "true", "yes"}:
+        return
+    level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        force=True,
+    )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+
+_configure_logging()
+
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
@@ -61,6 +80,10 @@ def _bootstrap() -> None:
 
         if os.getenv("ENABLE_WHATSAPP_QUEUE_POLLING", "").lower() in {"1", "true", "yes"}:
             asyncio.create_task(run_whatsapp_queue_polling())
+            logger.info(
+                "[Startup] Polling file WhatsApp actif → %s",
+                os.getenv("WHATSAPP_QUEUE_POP_URL", "(WHATSAPP_QUEUE_POP_URL non défini)"),
+            )
 
     @app.on_event("shutdown")
     def shutdown_event():
