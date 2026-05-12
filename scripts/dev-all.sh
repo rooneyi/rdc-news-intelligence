@@ -75,9 +75,9 @@ if [[ ! -d "$AI_DIR" || ! -d "$FRONTEND_DIR" ]]; then
 fi
 
 if [[ -x "$AI_DIR/.env/bin/python" ]]; then
-  AI_CMD="cd '$AI_DIR' && source .env/bin/activate && uvicorn app.main:app --host 127.0.0.1 --port $AI_PORT --reload"
+  AI_CMD="cd '$AI_DIR' && export PYTHONUNBUFFERED=1 && source .env/bin/activate && uvicorn app.main:app --host 127.0.0.1 --port $AI_PORT --reload"
 else
-  AI_CMD="cd '$AI_DIR' && uvicorn app.main:app --host 127.0.0.1 --port $AI_PORT --reload"
+  AI_CMD="cd '$AI_DIR' && export PYTHONUNBUFFERED=1 && uvicorn app.main:app --host 127.0.0.1 --port $AI_PORT --reload"
 fi
 
 log "Installing frontend dependencies (npm install)"
