@@ -107,3 +107,14 @@ WHATSAPP_REPLY_RELAY_URL=https://rooney-rdc.rooneykalumba.tech/webhooks/whatsapp
 WHATSAPP_REPLY_RELAY_TOKEN=secret-relay
 WHATSAPP_REPLY_RELAY_TIMEOUT=15
 ```
+
+### Worker sur le même VPS que FastAPI (PM2 / uvicorn)
+
+Si le polling et l’API tournent **sur la même machine**, n’appelle pas le domaine public en HTTPS : OpenLiteSpeed / nginx peut renvoyer **502** ou une page HTML si `/webhooks/` n’est pas encore proxifié vers uvicorn. Utilise l’URL **locale** (même port que PM2, souvent `8000`) :
+
+```env
+WHATSAPP_QUEUE_POP_URL=http://127.0.0.1:8000/webhooks/whatsapp/queue/pop
+WHATSAPP_REPLY_RELAY_URL=http://127.0.0.1:8000/webhooks/whatsapp/reply-relay
+```
+
+Pour **`https://…/health`** en JSON : configure le reverse proxy (vhost) avec une règle qui envoie `/health` et `/webhooks/` vers `http://127.0.0.1:8000`, ou teste en SSH avec `curl http://127.0.0.1:8000/health`.

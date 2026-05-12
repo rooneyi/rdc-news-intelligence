@@ -599,12 +599,33 @@ async def run_whatsapp_queue_polling() -> None:
         try:
             async with httpx.AsyncClient(timeout=timeout_seconds) as client:
                 resp = await client.post(queue_pop_url, headers=headers)
+
+            if resp.status_code >= 400:
+                logger.warning(
+                    "[WhatsApp Queue] HTTP %s sur queue pop — si FastAPI tourne sur ce même serveur, "
+                    "utilise WHATSAPP_QUEUE_POP_URL=http://127.0.0.1:<port>/webhooks/whatsapp/queue/pop "
+                    "(évite nginx / 502). Aperçu réponse: %.120s",
+                    resp.status_code,
+                    (resp.text or "").replace("\n", " "),
+                )
+                await asyncio.sleep(poll_interval)
+                continue
+
+            try:
                 data = resp.json()
-                item = data.get("item")
-                if item:
-                    await _dispatch_whatsapp_payload(item, background_tasks=None)
-                    await asyncio.sleep(0.2)
-                    continue
+            except ValueError:
+                logger.warning(
+                    "[WhatsApp Queue] Réponse non-JSON (proxy mal configuré ?): %.120s",
+                    (resp.text or "").replace("\n", " "),
+                )
+                await asyncio.sleep(poll_interval)
+                continue
+
+            item = data.get("item")
+            if item:
+                await _dispatch_whatsapp_payload(item, background_tasks=None)
+                await asyncio.sleep(0.2)
+                continue
         except Exception as e:
             logger.error("[WhatsApp Queue] Erreur polling (%s): %r", type(e).__name__, e)
 

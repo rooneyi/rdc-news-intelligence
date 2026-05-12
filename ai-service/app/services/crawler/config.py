@@ -8,11 +8,10 @@ from pathlib import Path
 
 # Ensure env variables are loaded when running crawler CLI directly
 _project_root = Path(__file__).resolve().parents[3]
-_env_path = _project_root / ".env_file"
-if _env_path.exists():
-    load_dotenv(dotenv_path=_env_path)
-else:
-    load_dotenv(dotenv_path=_project_root / ".env")
+_env_path = _project_root / ".env"
+if not _env_path.exists():
+    _env_path = _project_root / ".env_file"
+load_dotenv(dotenv_path=_env_path)
 
 
 @dataclass

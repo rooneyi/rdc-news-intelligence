@@ -5,7 +5,7 @@
  * - Être dans le dossier `ai-service` (là où se trouvent `app/` et ce fichier).
  * - Virtualenv Python : le fichier choisit automatiquement le premier existant parmi
  *   `venv/`, `.venv/`, `.env/` (dans cet ordre). Sinon : `export RDC_AI_PYTHON=/chemin/vers/bin/python`
- * - Fichier `app/core/config.py` charge `ai-service/.env_file` — à renseigner sur le VPS.
+ * - Variables : `ai-service/.env` en priorité, sinon `.env_file` (voir `app/core/config.py`).
  *
  * Commandes :
  *   cd .../ai-service
@@ -15,13 +15,13 @@
  *
  * Logs PM2 : ./logs/pm2-ai-*.log (dossier logs/ créé si besoin par PM2)
  *
- * Nginx doit faire proxy_pass vers le même port que `APP_PORT` (défaut 8001).
+ * Nginx doit faire proxy_pass vers le même port que `APP_PORT` (défaut 8000).
  */
 const fs = require("fs");
 const path = require("path");
 
 const root = __dirname;
-const port = process.env.APP_PORT || "8001";
+const port = process.env.APP_PORT || "8000";
 
 function resolvePythonBin(base) {
   const explicit = process.env.RDC_AI_PYTHON;

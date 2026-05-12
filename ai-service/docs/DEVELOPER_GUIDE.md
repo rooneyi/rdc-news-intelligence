@@ -7,7 +7,7 @@
 - [ ] `cd ai-service`
 - [ ] Créer/activer l'environnement virtuel : `source .env/bin/activate`
 - [ ] Installer les dépendances : `pip install -r requirements.txt`
-- [ ] Vérifier `.env_file` avec les bonnes valeurs DB
+- [ ] Vérifier `.env` ou `.env_file` (le premier présent dans `ai-service/` est chargé — voir `app/core/config.py`)
 - [ ] Vérifier PostgreSQL est en cours d'exécution
 - [ ] Lancer : `python -m uvicorn app.main:app --reload`
 
@@ -123,8 +123,8 @@ sudo systemctl status postgresql
 # ou (Mac)
 brew services list | grep postgres
 
-# Vérifier les credentials dans .env_file
-cat .env_file
+# Vérifier les credentials (.env prioritaire sur le VPS)
+cat .env 2>/dev/null || cat .env_file
 ```
 
 ### API ne redémarre pas avec --reload

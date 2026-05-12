@@ -1,12 +1,11 @@
 import os
 from dotenv import load_dotenv
 
-# Try to find .env file in the ai-service directory
-dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env_file")
-if not os.path.exists(dotenv_path):
-    # fallback to just .env if .env_file doesn't exist
-    dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
-
+# Priorité : `.env` (ex. VPS / prod), sinon `.env_file` (habitude locale du dépôt).
+_ai_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+_dotenv = os.path.join(_ai_root, ".env")
+_dotenv_file = os.path.join(_ai_root, ".env_file")
+dotenv_path = _dotenv if os.path.exists(_dotenv) else _dotenv_file
 load_dotenv(dotenv_path=dotenv_path)
 
 DB_HOST = os.getenv("DB_HOST", "localhost")
