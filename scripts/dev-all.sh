@@ -74,6 +74,7 @@ if [[ ! -d "$AI_DIR" || ! -d "$FRONTEND_DIR" ]]; then
   exit 1
 fi
 
+# Définir RDC_ENV_FILE_ONLY=1 avant ./dev-all.sh pour n'utiliser que ai-service/.env_file (ignorer .env).
 if [[ -x "$AI_DIR/.env/bin/python" ]]; then
   AI_CMD="cd '$AI_DIR' && export PYTHONUNBUFFERED=1 && source .env/bin/activate && uvicorn app.main:app --host 127.0.0.1 --port $AI_PORT --reload"
 else
