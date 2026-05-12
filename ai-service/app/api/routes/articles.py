@@ -2,6 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 import json
 import logging
+from pathlib import Path
 from app.services.article_service import create_article, search_similar, save_crawled_article
 from app.services.embedding_service import EmbeddingService
 from app.services.rag_service import RAGService
@@ -9,12 +10,37 @@ from app.services.ocr_service import OCRService
 from app.services.load_dataset import load_and_insert
 from app.schemas.article import ArticleCreate, ArticleOut, RAGRequest, RAGResponse
 from app.services.crawler.models import Article as CrawlerArticle
+from app.db.session import get_db
 from pydantic import BaseModel
 from typing import Optional, List
 import os
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+_SOURCES_JSON = Path(__file__).resolve().parents[3] / "data" / "crawler" / "sources.json"
+
+
+def _crawler_catalog_source_ids() -> list[str]:
+    """Identifiants déclarés dans data/crawler/sources.json (ordre du fichier, sans doublon)."""
+    if not _SOURCES_JSON.exists():
+        return []
+    try:
+        with _SOURCES_JSON.open(encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Impossible de lire %s: %s", _SOURCES_JSON, exc)
+        return []
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for section in ("html", "wordpress"):
+        for item in data.get("sources", {}).get(section, []) or []:
+            sid = item.get("sourceId")
+            if isinstance(sid, str) and sid.strip() and sid not in seen:
+                seen.add(sid)
+                ordered.append(sid.strip())
+    return ordered
+
 
 # ── Articles manuels ────────────────────────────────────────────────────────
 
@@ -151,6 +177,109 @@ async def rag_query_stream(payload: RAGRequest):
 
 class LoadRequest(BaseModel):
     limit: Optional[int] = None
+
+
+@router.get("/admin/overview", summary="Admin overview stats", tags=["Admin"])
+def admin_overview():
+    """
+    Retourne des stats réelles pour la console admin frontend.
+    """
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT COUNT(*) FROM articles")
+        total_articles = int(cur.fetchone()[0] or 0)
+
+        cur.execute("SELECT COUNT(*) FROM articles WHERE embedding IS NOT NULL")
+        embedded_articles = int(cur.fetchone()[0] or 0)
+
+        cur.execute("SELECT COUNT(DISTINCT COALESCE(source_id, 'unknown')) FROM articles")
+        total_sources = int(cur.fetchone()[0] or 0)
+
+        cur.execute(
+            """
+            SELECT COALESCE(NULLIF(TRIM(source_id), ''), 'unknown') AS source, COUNT(*) AS n
+            FROM articles
+            GROUP BY source
+            """
+        )
+        counts_map: dict[str, int] = {}
+        for row in cur.fetchall():
+            counts_map[row[0]] = int(row[1])
+
+        sorted_by_volume = sorted(counts_map.items(), key=lambda x: -x[1])
+        top_sources = [{"source": k, "count": v} for k, v in sorted_by_volume[:6]]
+
+        catalog_ids = _crawler_catalog_source_ids()
+        breakdown: list[dict] = []
+        catalog_set = set(catalog_ids)
+        for sid in catalog_ids:
+            breakdown.append(
+                {
+                    "source": sid,
+                    "count": counts_map.get(sid, 0),
+                    "in_catalog": True,
+                }
+            )
+        for sid, n in sorted_by_volume:
+            if sid not in catalog_set:
+                breakdown.append({"source": sid, "count": n, "in_catalog": False})
+        breakdown.sort(key=lambda x: (-x["count"], x["source"]))
+
+        cur.execute(
+            """
+            SELECT id, title, COALESCE(source_id, 'unknown') AS source, COALESCE(link, '') AS link
+            FROM articles
+            ORDER BY id DESC
+            LIMIT 8
+            """
+        )
+        latest_articles = [
+            {
+                "id": int(row[0]),
+                "title": row[1],
+                "source": row[2],
+                "link": row[3],
+            }
+            for row in cur.fetchall()
+        ]
+
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM articles
+            WHERE source_id IS NULL OR source_id = ''
+            """
+        )
+        missing_source = int(cur.fetchone()[0] or 0)
+
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM articles
+            WHERE link IS NULL OR link = ''
+            """
+        )
+        missing_link = int(cur.fetchone()[0] or 0)
+
+        return {
+            "status": "ok",
+            "stats": {
+                "total_articles": total_articles,
+                "embedded_articles": embedded_articles,
+                "total_sources": total_sources,
+                "catalog_sources_configured": len(catalog_ids),
+                "embedding_coverage": round((embedded_articles / total_articles) * 100, 2)
+                if total_articles
+                else 0.0,
+                "missing_source_articles": missing_source,
+                "missing_link_articles": missing_link,
+            },
+            "top_sources": top_sources,
+            "sources_breakdown": breakdown,
+            "latest_articles": latest_articles,
+        }
+    finally:
+        cur.close()
+        conn.close()
 
 
 @router.post("/admin/load", summary="Trigger dataset load (admin)", tags=["Admin"])

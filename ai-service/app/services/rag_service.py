@@ -13,6 +13,27 @@ class RAGService:
         self.embedding_service = EmbeddingService()
         self.retrieval_service = RetrievalService()
         self.llm_service = LLMService()
+        self.min_similarity_default = float(os.getenv("RAG_MIN_SIMILARITY", "0.36"))
+        self.min_similarity_messaging = float(os.getenv("RAG_MIN_SIMILARITY_MSG", "0.40"))
+
+    def _filter_relevant_articles(self, articles: list, channel: str) -> list:
+        min_similarity = (
+            self.min_similarity_messaging
+            if channel in {"whatsapp", "telegram"}
+            else self.min_similarity_default
+        )
+        filtered = [
+            a for a in articles
+            if (a.similarity is not None and a.similarity >= min_similarity)
+        ]
+        logger.info(
+            "[RAGService] Filtrage pertinence: %s/%s conservés (seuil=%.2f, canal=%s)",
+            len(filtered),
+            len(articles),
+            min_similarity,
+            channel,
+        )
+        return filtered
 
     async def generate_answer_stream(
         self,
@@ -28,13 +49,17 @@ class RAGService:
             # 1. Recherche des articles (Très rapide)
             query_embedding = self.embedding_service.generate(query)
             articles = self.retrieval_service.search(query_embedding, limit=top_k)
+            articles = self._filter_relevant_articles(articles, channel)
 
             if not articles:
-                logger.info("[RAGService] Aucun article trouvé pour la requête. On force l'appel à Mistral avec une liste vide.")
-                # On force l'appel à Mistral même si la liste est vide
-                async for chunk in self.llm_service.summarize_stream(query, [], channel=channel):
-                    logger.info(f"[RAGService] Chunk généré (no articles): {chunk[:60]}...")
-                    yield {"type": "summary_chunk", "text": chunk}
+                logger.info("[RAGService] Aucun article suffisamment pertinent pour la requête.")
+                yield {
+                    "type": "summary_chunk",
+                    "text": (
+                        "❌ VÉRIFICATION : NON VÉRIFIABLE\n"
+                        "📝 EXPLICATION : Je n'ai trouvé aucune source locale suffisamment liée à votre question."
+                    ),
+                }
                 yield {"type": "done"}
                 return
 
@@ -65,6 +90,7 @@ class RAGService:
 
             query_embedding = self.embedding_service.generate(query)
             articles = self.retrieval_service.search(query_embedding, limit=top_k)
+            articles = self._filter_relevant_articles(articles, channel)
             
             if not articles:
                 logger.info("[RAGService] Aucun article trouvé. Message générique retourné.")

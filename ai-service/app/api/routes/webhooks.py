@@ -1,4 +1,5 @@
 import logging
+import re
 from fastapi import APIRouter, Request, BackgroundTasks, HTTPException, Response
 from app.services.rag_service import RAGService
 from app.services.ocr_service import OCRService
@@ -7,6 +8,63 @@ import httpx
 import os
 import asyncio
 from collections import deque
+
+# WhatsApp / Meta: ~4096 chars per text body; long URLs must not be split mid-link.
+_URL_IN_TEXT = re.compile(r"https?://[^\s]+", re.IGNORECASE)
+
+
+def _pop_whatsapp_chunk(
+    text: str,
+    min_chars: int,
+    hard_max: int,
+    *,
+    force: bool = False,
+) -> tuple[str, str]:
+    """
+    Retire un préfixe à envoyer comme un message WhatsApp.
+    Privilégie les fins de ligne / espaces; évite de couper au milieu d'une URL.
+    """
+    if not text:
+        return "", ""
+    if force and len(text) < min_chars:
+        return text.strip(), ""
+
+    if len(text) < min_chars:
+        return "", text
+
+    limit = min(len(text), hard_max)
+    window = text[:limit]
+
+    cut: int | None = None
+    for sep in ("\n\n", "\n"):
+        p = window.rfind(sep)
+        if p >= 0:
+            after = p + len(sep)
+            if after >= min_chars:
+                cut = after
+                break
+
+    if cut is None:
+        p = window.rfind(" ")
+        if p >= 0 and p + 1 >= min_chars:
+            cut = p + 1
+
+    if cut is None:
+        for m in _URL_IN_TEXT.finditer(text):
+            if m.start() < limit < m.end():
+                cut = min(m.end(), len(text), hard_max)
+                break
+
+    if cut is None:
+        cut = limit
+
+    chunk = text[:cut].rstrip()
+    rest = text[cut:].lstrip()
+    if not chunk and rest:
+        n = min(min_chars, len(rest))
+        chunk = rest[:n]
+        rest = rest[n:]
+    return chunk, rest
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -138,7 +196,7 @@ async def process_telegram_message(chat_id: str, query: str):
         logger.error(f"Erreur streaming Telegram: {e}")
 
 
-async def _send_whatsapp_text_direct(phone_number: str, body: str) -> None:
+async def _send_whatsapp_text_direct(phone_number: str, body: str) -> dict:
     whatsapp_token = os.getenv("WHATSAPP_TOKEN")
     phone_id = os.getenv("WHATSAPP_PHONE_ID")
     if not whatsapp_token or not phone_id:
@@ -154,8 +212,64 @@ async def _send_whatsapp_text_direct(phone_number: str, body: str) -> None:
         "text": {"body": body},
     }
 
-    async with httpx.AsyncClient() as client:
-        await client.post(url, json=payload, headers=headers)
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(url, json=payload, headers=headers)
+        raw_body = resp.text[:800]
+        if resp.status_code >= 400:
+            logger.error(
+                "[WhatsApp] Echec envoi Meta (status=%s, to=%s, body=%s)",
+                resp.status_code,
+                phone_number,
+                raw_body,
+            )
+            raise HTTPException(status_code=502, detail=f"Echec envoi WhatsApp Meta: {raw_body}")
+
+        try:
+            data = resp.json()
+        except ValueError:
+            logger.error("[WhatsApp] Reponse Meta non-JSON: %s", raw_body)
+            raise HTTPException(status_code=502, detail="Réponse Meta invalide (non JSON)")
+
+        if data.get("error"):
+            logger.error("[WhatsApp] Erreur API Meta: %s", data["error"])
+            raise HTTPException(status_code=502, detail=f"Erreur API Meta: {data['error']}")
+
+        logger.info("[WhatsApp] Message envoye a Meta (to=%s)", phone_number)
+        return data
+
+
+async def _whatsapp_mark_read_and_show_typing(wa_message_id: str | None) -> None:
+    """
+    Marque le message utilisateur comme lu et affiche l’indicateur de frappe (Meta Cloud API).
+    Nécessite l’id du message entrant (webhook messages[0].id). Passage direct Meta uniquement.
+    """
+    if not (wa_message_id and str(wa_message_id).strip()):
+        return
+    whatsapp_token = os.getenv("WHATSAPP_TOKEN")
+    phone_id = os.getenv("WHATSAPP_PHONE_ID")
+    if not whatsapp_token or not phone_id:
+        return
+    url = f"https://graph.facebook.com/v17.0/{phone_id}/messages"
+    headers = {"Authorization": f"Bearer {whatsapp_token}", "Content-Type": "application/json"}
+    payload = {
+        "messaging_product": "whatsapp",
+        "status": "read",
+        "message_id": str(wa_message_id).strip(),
+        "typing_indicator": {"type": "text"},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            if resp.status_code >= 400:
+                logger.warning(
+                    "[WhatsApp] Indicateur frappe / lu — echec (status=%s): %s",
+                    resp.status_code,
+                    resp.text[:400],
+                )
+            else:
+                logger.info("[WhatsApp] Message marque lu + indicateur de frappe")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[WhatsApp] Indicateur frappe: %s", e)
 
 
 async def _send_whatsapp_text(phone_number: str, body: str) -> None:
@@ -179,6 +293,13 @@ async def _send_whatsapp_text(phone_number: str, body: str) -> None:
     try:
         async with httpx.AsyncClient(timeout=timeout_seconds) as client:
             resp = await client.post(reply_relay_url, json=payload, headers=headers)
+            if resp.status_code >= 400:
+                logger.error(
+                    "[WhatsApp] Relay reponse en echec (status=%s, body=%s)",
+                    resp.status_code,
+                    resp.text[:800],
+                )
+                return
             logger.info(
                 "[WhatsApp] Reponse relayee -> %s (status=%s)",
                 reply_relay_url,
@@ -188,10 +309,59 @@ async def _send_whatsapp_text(phone_number: str, body: str) -> None:
         logger.error("[WhatsApp] Echec relay reponse vers %s: %s", reply_relay_url, e)
 
 
-async def _stream_whatsapp_response(phone_number: str, query: str) -> None:
+async def _send_whatsapp_long_body(phone_number: str, body: str) -> None:
+    """
+    Envoie un texte complet. Une seule requête Meta si body <= WHATSAPP_CHUNK_MAX_CHARS.
+    Au-delà, découpage propre (pas au milieu des URLs) pour respecter la limite ~4096.
+    """
+    body = (body or "").strip()
+    if not body:
+        return
+    chunk_max = int(os.getenv("WHATSAPP_CHUNK_MAX_CHARS", "3800"))
+    chunk_min = int(os.getenv("WHATSAPP_CHUNK_MIN_CHARS", "350"))
+    if len(body) <= chunk_max:
+        await _send_whatsapp_text(phone_number, body)
+        return
+
+    rest = body
+    while rest.strip():
+        if len(rest) <= chunk_max:
+            await _send_whatsapp_text(phone_number, rest.strip())
+            break
+        to_send, rest = _pop_whatsapp_chunk(rest, chunk_min, chunk_max, force=True)
+        if not to_send:
+            await _send_whatsapp_text(phone_number, rest.strip())
+            break
+        await _send_whatsapp_text(phone_number, to_send)
+
+
+async def _stream_whatsapp_response(
+    phone_number: str,
+    query: str,
+    *,
+    wa_message_id: str | None = None,
+) -> None:
     rag_service = RAGService()
     text_buffer = ""
     sources: list[dict] = []
+    # Premier envoi plus rapide pendant le stream (évite l’attente « vide » trop longue).
+    chunk_min = int(os.getenv("WHATSAPP_CHUNK_MIN_CHARS", "220"))
+    chunk_max = int(os.getenv("WHATSAPP_CHUNK_MAX_CHARS", "3800"))
+    # Par défaut: envoi pendant la génération (streaming). false = tout à la fin (une ou peu de bulles).
+    stream_while = os.getenv("WHATSAPP_STREAM_WHILE_GENERATING", "true").lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+    await _whatsapp_mark_read_and_show_typing(wa_message_id)
+    if not wa_message_id and os.getenv("WHATSAPP_ACK_IF_NO_TYPING", "true").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
+        await _send_whatsapp_text(phone_number, "🔎 Analyse en cours…")
 
     async for event in rag_service.generate_answer_stream(
         query,
@@ -206,9 +376,14 @@ async def _stream_whatsapp_response(phone_number: str, query: str) -> None:
 
         if event_type == "summary_chunk":
             text_buffer += event.get("text", "")
-            if len(text_buffer) >= 350:
-                await _send_whatsapp_text(phone_number, text_buffer)
-                text_buffer = ""
+            if stream_while:
+                while len(text_buffer) >= chunk_min:
+                    to_send, text_buffer = _pop_whatsapp_chunk(
+                        text_buffer, chunk_min, chunk_max, force=False
+                    )
+                    if not to_send:
+                        break
+                    await _send_whatsapp_text(phone_number, to_send)
             continue
 
         if event_type == "error":
@@ -221,8 +396,20 @@ async def _stream_whatsapp_response(phone_number: str, query: str) -> None:
         if event_type == "done":
             break
 
-    if text_buffer.strip():
-        await _send_whatsapp_text(phone_number, text_buffer)
+    if stream_while:
+        while text_buffer.strip():
+            if len(text_buffer) < chunk_min:
+                await _send_whatsapp_text(phone_number, text_buffer.strip())
+                break
+            to_send, text_buffer = _pop_whatsapp_chunk(
+                text_buffer, chunk_min, chunk_max, force=True
+            )
+            if not to_send:
+                await _send_whatsapp_text(phone_number, text_buffer.strip())
+                break
+            await _send_whatsapp_text(phone_number, to_send)
+    else:
+        await _send_whatsapp_long_body(phone_number, text_buffer)
 
     if sources:
         lines = []
@@ -230,7 +417,10 @@ async def _stream_whatsapp_response(phone_number: str, query: str) -> None:
             title = source.get("title") or "Source locale"
             url = source.get("url") or "(lien indisponible)"
             lines.append(f"[{i}] {title} - {url}")
-        await _send_whatsapp_text(phone_number, "🔗 SOURCES LOCALES :\n" + "\n".join(lines))
+        await _send_whatsapp_long_body(
+            phone_number,
+            "🔗 SOURCES LOCALES :\n" + "\n".join(lines),
+        )
 
 
 async def _forward_whatsapp_payload(payload: dict) -> None:
@@ -299,6 +489,7 @@ async def _dispatch_whatsapp_payload(payload: dict, background_tasks: Background
 
         msg = value["messages"][0]
         phone_number = msg["from"]
+        wa_message_id = msg.get("id")
         msg_type = msg.get("type")
         whatsapp_scope = topic_gate_service.detect_whatsapp_scope(value, msg)
         require_topic_gate = whatsapp_scope == "group"
@@ -312,9 +503,12 @@ async def _dispatch_whatsapp_payload(payload: dict, background_tasks: Background
                     phone_number,
                     text,
                     require_topic_gate,
+                    wa_message_id,
                 )
             else:
-                asyncio.create_task(process_whatsapp_message(phone_number, text, require_topic_gate))
+                asyncio.create_task(
+                    process_whatsapp_message(phone_number, text, require_topic_gate, wa_message_id)
+                )
 
         elif msg_type == "image":
             image = msg.get("image", {})
@@ -329,11 +523,26 @@ async def _dispatch_whatsapp_payload(payload: dict, background_tasks: Background
                         media_id,
                         caption,
                         require_topic_gate,
+                        wa_message_id,
                     )
                 else:
                     asyncio.create_task(
-                        process_whatsapp_image(phone_number, media_id, caption, require_topic_gate)
+                        process_whatsapp_image(
+                            phone_number,
+                            media_id,
+                            caption,
+                            require_topic_gate,
+                            wa_message_id,
+                        )
                     )
+            else:
+                logger.error("[WhatsApp] Message image sans media id — webhook Meta incomplet ou format inattendu.")
+                asyncio.create_task(
+                    _send_whatsapp_text(
+                        phone_number,
+                        "❌ Impossible de récupérer cette image (identifiant média manquant). Réessaie ou envoie une capture plus légère.",
+                    )
+                )
     except Exception as e:
         logger.error(f"Erreur de parsing payload WhatsApp: {e}")
 
@@ -366,11 +575,16 @@ async def run_whatsapp_queue_polling() -> None:
                     await asyncio.sleep(0.2)
                     continue
         except Exception as e:
-            logger.error("[WhatsApp Queue] Erreur polling: %s", e)
+            logger.error("[WhatsApp Queue] Erreur polling (%s): %r", type(e).__name__, e)
 
         await asyncio.sleep(poll_interval)
 
-async def process_whatsapp_message(phone_number: str, query: str, require_topic_gate: bool = False):
+async def process_whatsapp_message(
+    phone_number: str,
+    query: str,
+    require_topic_gate: bool = False,
+    wa_message_id: str | None = None,
+):
     whatsapp_token = os.getenv("WHATSAPP_TOKEN")
     phone_id = os.getenv("WHATSAPP_PHONE_ID")
     if not whatsapp_token or not phone_id:
@@ -390,7 +604,7 @@ async def process_whatsapp_message(phone_number: str, query: str, require_topic_
         
 
     try:
-        await _stream_whatsapp_response(phone_number, query)
+        await _stream_whatsapp_response(phone_number, query, wa_message_id=wa_message_id)
     except Exception as e:
         logger.error(f"Erreur envoi WhatsApp: {e}")
 
@@ -400,6 +614,7 @@ async def process_whatsapp_image(
     media_id: str,
     caption: str | None = None,
     require_topic_gate: bool = False,
+    wa_message_id: str | None = None,
 ):
     """Traite une image reçue sur WhatsApp : OCR local puis RAG texte."""
     whatsapp_token = os.getenv("WHATSAPP_TOKEN")
@@ -417,9 +632,25 @@ async def process_whatsapp_image(
                 f"https://graph.facebook.com/v17.0/{media_id}", headers=base_headers
             )
             meta_data = meta_resp.json()
+            if meta_resp.status_code >= 400:
+                logger.error(
+                    "[WhatsApp] Meta média %s (status=%s): %s",
+                    media_id,
+                    meta_resp.status_code,
+                    meta_data,
+                )
+                await _send_whatsapp_text(
+                    phone_number,
+                    "❌ Impossible de télécharger l'image depuis WhatsApp (vérifie le token / les permissions média).",
+                )
+                return
             media_url = meta_data.get("url")
             if not media_url:
                 logger.error("[WhatsApp] Impossible de récupérer l'URL du média: %s", meta_data)
+                await _send_whatsapp_text(
+                    phone_number,
+                    "❌ Impossible d'accéder au fichier image via l'API Meta.",
+                )
                 return
 
             # 2. Télécharger l'image
@@ -431,16 +662,9 @@ async def process_whatsapp_image(
             combined_query = _build_combined_message(caption, extracted_text)
             if not combined_query:
                 logger.info("[WhatsApp] Aucun texte exploitable extrait de l'image pour %s", phone_number)
-                payload = {
-                    "messaging_product": "whatsapp",
-                    "to": phone_number,
-                    "type": "text",
-                    "text": {"body": "❌ Impossible d'extraire du texte de cette image."},
-                }
-                await client.post(
-                    f"https://graph.facebook.com/v17.0/{phone_id}/messages",
-                    json=payload,
-                    headers={**base_headers, "Content-Type": "application/json"},
+                await _send_whatsapp_text(
+                    phone_number,
+                    "❌ Impossible d'extraire du texte de cette image. Ajoute une légende avec ta question, ou envoie une image avec du texte lisible.",
                 )
                 return
 
@@ -458,10 +682,17 @@ async def process_whatsapp_image(
                     return
 
             # 4. RAG texte en streaming par morceaux
-            await _stream_whatsapp_response(phone_number, combined_query)
+            await _stream_whatsapp_response(phone_number, combined_query, wa_message_id=wa_message_id)
 
     except Exception as e:  # noqa: BLE001
-        logger.error(f"Erreur traitement image WhatsApp: {e}")
+        logger.exception("Erreur traitement image WhatsApp: %s", e)
+        try:
+            await _send_whatsapp_text(
+                phone_number,
+                "⚠️ Erreur technique lors du traitement de l'image. Réessaie dans un instant.",
+            )
+        except Exception as send_err:  # noqa: BLE001
+            logger.error("[WhatsApp] Impossible d'envoyer le message d'erreur image: %s", send_err)
 
 @router.post("/telegram")
 async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
@@ -587,8 +818,8 @@ async def whatsapp_reply_relay(request: Request):
     if not phone_number or not body:
         raise HTTPException(status_code=422, detail="Champs 'to' et 'body' requis")
 
-    await _send_whatsapp_text_direct(phone_number, body)
-    return {"status": "sent"}
+    meta_response = await _send_whatsapp_text_direct(phone_number, body)
+    return {"status": "sent", "meta": meta_response}
 
 @router.get("/whatsapp")
 async def whatsapp_verify(request: Request):
