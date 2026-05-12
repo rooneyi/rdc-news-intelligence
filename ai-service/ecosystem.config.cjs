@@ -5,7 +5,7 @@
  * - Être dans le dossier `ai-service` (là où se trouvent `app/` et ce fichier).
  * - Virtualenv Python : le fichier choisit automatiquement le premier existant parmi
  *   `venv/`, `.venv/`, `.env/` (dans cet ordre). Sinon : `export RDC_AI_PYTHON=/chemin/vers/bin/python`
- * - Fichier `app/core/config.py` charge `ai-service/.env_file` — à renseigner sur le VPS.
+ * - Variables : `ai-service/.env` en priorité, sinon `.env_file` (voir `app/core/config.py`).
  *
  * Commandes :
  *   cd .../ai-service
