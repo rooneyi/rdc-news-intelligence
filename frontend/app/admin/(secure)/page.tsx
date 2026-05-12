@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Activity, Database, Globe, RefreshCw, Server, Shield, Zap } from "lucide-react";
-import { SourcesPieChart } from "./SourcesPieChart";
+import { Activity, Database, Globe, LogOut, RefreshCw, Server, Shield, Zap } from "lucide-react";
+import { useAdminBranding } from "@/app/admin/admin-branding-context";
+import { SourcesPieChart } from "../SourcesPieChart";
 
 type AdminOverview = {
   status: string;
@@ -22,10 +24,18 @@ type AdminOverview = {
 };
 
 export default function AdminPage() {
+  const { appName, adminEmail } = useAdminBranding();
+  const router = useRouter();
   const [data, setData] = useState<AdminOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const logout = useCallback(async () => {
+    await fetch("/api/admin/logout", { method: "POST" });
+    router.push("/admin/login");
+    router.refresh();
+  }, [router]);
 
   const loadOverview = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -35,6 +45,10 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/fastapi/admin/overview", { cache: "no-store" });
       const payload = await res.json();
+      if (res.status === 401) {
+        router.push("/admin/login");
+        return;
+      }
       if (!res.ok) {
         throw new Error(payload?.error ?? "Impossible de charger les stats admin.");
       }
@@ -46,7 +60,7 @@ export default function AdminPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     void loadOverview();
@@ -94,18 +108,30 @@ export default function AdminPage() {
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-5 py-5 md:px-8">
-      <header className="rdc-card mb-5 flex items-center justify-between rounded-2xl px-5 py-3">
+      <header className="rdc-card mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl px-5 py-3">
         <div className="flex items-center gap-3">
           <div className="rounded-lg border border-blue-300/30 bg-blue-500/15 p-2 text-blue-300">
             <Shield size={15} />
           </div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-blue-300">
-            Console admin
-          </p>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-blue-300">
+              {appName}
+            </p>
+            <p className="text-[10px] text-slate-500">Administration · {adminEmail}</p>
+          </div>
         </div>
-        <Link href="/" className="rounded-xl border border-slate-500/30 px-3 py-1.5 text-xs text-slate-200">
-          Retour accueil
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void logout()}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-500/40 px-3 py-1.5 text-xs text-slate-200 transition hover:border-slate-400/60"
+          >
+            <LogOut size={14} /> Déconnexion
+          </button>
+          <Link href="/" className="rounded-xl border border-slate-500/30 px-3 py-1.5 text-xs text-slate-200">
+            Retour accueil
+          </Link>
+        </div>
       </header>
 
       <section className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">

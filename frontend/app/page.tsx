@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { ArrowRight, Database, Shield, Zap } from "lucide-react";
+import { getAppDisplayName } from "@/lib/app-config";
+
+const appName = getAppDisplayName();
 
 export default function HomePage() {
   return (
@@ -12,7 +15,7 @@ export default function HomePage() {
             <Shield size={15} />
           </div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-blue-300">
-            RDC News Intelligence
+            {appName}
           </p>
         </div>
         <div className="flex gap-2">
@@ -54,7 +57,7 @@ export default function HomePage() {
               href="/admin"
               className="rounded-2xl border border-slate-500/30 bg-slate-700/30 px-5 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-700/50"
             >
-              Ouvrir la console admin
+              Administration
             </Link>
           </div>
         </div>

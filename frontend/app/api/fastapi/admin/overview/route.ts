@@ -1,10 +1,33 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import {
+  ADMIN_COOKIE_NAME,
+  getAdminEmail,
+  getAdminPassword,
+  getAdminSessionSecret,
+  verifyAdminSession,
+} from "@/lib/admin-auth";
 
 const FASTAPI_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL ?? "http://127.0.0.1:8000";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const secret = getAdminSessionSecret();
+  if (!secret || !getAdminPassword() || !getAdminEmail()) {
+    return NextResponse.json(
+      {
+        error:
+          "Configuration admin manquante côté Next.js (ADMIN_PASSWORD, ADMIN_SESSION_SECRET, ADMIN_EMAIL).",
+      },
+      { status: 503 },
+    );
+  }
+  const token = (await cookies()).get(ADMIN_COOKIE_NAME)?.value;
+  if (!verifyAdminSession(token, secret)) {
+    return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
+  }
+
   try {
     const upstream = await fetch(`${FASTAPI_BASE_URL}/admin/overview`, {
       cache: "no-store",

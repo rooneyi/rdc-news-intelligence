@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { getAppDisplayName } from "@/lib/app-config";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,8 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "RDC News Intelligence",
-  description: "Plateforme RAG avec espace client, authentification, historique et console admin.",
+  title: getAppDisplayName(),
+  description:
+    "Plateforme RAG avec espace client, authentification, historique et espace d’administration.",
 };
 
 export default function RootLayout({
