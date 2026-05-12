@@ -74,12 +74,46 @@ _whatsapp_queue: deque[dict] = deque()
 _whatsapp_queue_lock = asyncio.Lock()
 
 
+# Telegram limite les messages à 4096 caractères ; au-delà, editMessageText échoue sans mise à jour visible.
+TELEGRAM_TEXT_MAX = 4096
+
+
+def _clip_telegram_text(text: str, limit: int = TELEGRAM_TEXT_MAX) -> str:
+    text = text or ""
+    if len(text) <= limit:
+        return text
+    return text[: limit - 80] + "\n\n… (tronqué — limite Telegram)"
+
+
 async def _send_telegram_message(bot_token: str, chat_id: str, text: str) -> None:
     async with httpx.AsyncClient() as client:
         await client.post(
             f"https://api.telegram.org/bot{bot_token}/sendMessage",
-            json={"chat_id": chat_id, "text": text},
+            json={"chat_id": chat_id, "text": _clip_telegram_text(text)},
         )
+
+
+async def _telegram_edit_message_text(
+    client: httpx.AsyncClient,
+    base_url: str,
+    chat_id: str,
+    message_id: int,
+    text: str,
+) -> bool:
+    clipped = _clip_telegram_text(text)
+    resp = await client.post(
+        f"{base_url}/editMessageText",
+        json={"chat_id": chat_id, "message_id": message_id, "text": clipped},
+    )
+    try:
+        data = resp.json()
+    except ValueError:
+        logger.error("[Telegram] editMessageText réponse non-JSON (status=%s)", resp.status_code)
+        return False
+    if not data.get("ok"):
+        logger.error("[Telegram] editMessageText refusé: %s", data)
+        return False
+    return True
 
 
 async def _extract_telegram_photo_text(message: dict, bot_token: str) -> str:
@@ -156,13 +190,12 @@ async def process_telegram_message(chat_id: str, query: str):
                             lines.append(f"[{i}] {title} - {url}")
                         sources_header = "🔗 SOURCES LOCALES :\n" + "\n".join(lines) + "\n\n"
 
-                        await client.post(
-                            f"{base_url}/editMessageText",
-                            json={
-                                "chat_id": chat_id,
-                                "message_id": message_id,
-                                "text": sources_header + (text_buffer or "🕒 Génération de la réponse…"),
-                            },
+                        await _telegram_edit_message_text(
+                            client,
+                            base_url,
+                            chat_id,
+                            message_id,
+                            sources_header + (text_buffer or "🕒 Génération de la réponse…"),
                         )
 
                 elif event_type == "summary_chunk":
@@ -171,24 +204,22 @@ async def process_telegram_message(chat_id: str, query: str):
                         continue
                     text_buffer += chunk
 
-                    await client.post(
-                        f"{base_url}/editMessageText",
-                        json={
-                            "chat_id": chat_id,
-                            "message_id": message_id,
-                            "text": sources_header + text_buffer,
-                        },
+                    await _telegram_edit_message_text(
+                        client,
+                        base_url,
+                        chat_id,
+                        message_id,
+                        sources_header + text_buffer,
                     )
 
                 elif event_type == "error":
                     error_message = event.get("message", "Erreur interne RAG")
-                    await client.post(
-                        f"{base_url}/editMessageText",
-                        json={
-                            "chat_id": chat_id,
-                            "message_id": message_id,
-                            "text": error_message,
-                        },
+                    await _telegram_edit_message_text(
+                        client,
+                        base_url,
+                        chat_id,
+                        message_id,
+                        error_message,
                     )
                     break
 
@@ -600,8 +631,13 @@ async def process_whatsapp_message(
                 decision.confidence,
                 query,
             )
+            if os.getenv("TOPIC_GATE_REPLY_WHEN_IGNORED", "").lower() in {"1", "true", "yes"}:
+                await _send_whatsapp_text(
+                    phone_number,
+                    "ℹ️ Dans les groupes, ce bot ne répond qu’aux messages liés à l’actualité RDC "
+                    "(politique, sport, santé, sécurité). Reformule avec des mots-clés du contexte RDC.",
+                )
             return
-        
 
     try:
         await _stream_whatsapp_response(phone_number, query, wa_message_id=wa_message_id)
@@ -722,6 +758,16 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
                     decision.confidence,
                     text,
                 )
+                if os.getenv("TOPIC_GATE_REPLY_WHEN_IGNORED", "").lower() in {"1", "true", "yes"}:
+                    tok = os.getenv("TELEGRAM_BOT_TOKEN", "")
+                    if tok:
+                        await _send_telegram_message(
+                            tok,
+                            str(chat_id),
+                            "ℹ️ Dans les groupes, le bot ne répond qu’aux messages jugés liés à l’actualité RDC "
+                            "(politique, sport, santé, sécurité). Reformule avec des mots-clés du contexte RDC, "
+                            "ou écris-moi en privé.",
+                        )
                 return {"status": "ok"}
 
         background_tasks.add_task(process_telegram_message, str(chat_id), text)

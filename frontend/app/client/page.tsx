@@ -19,6 +19,23 @@ const WELCOME: ChatMessage = {
   meta: "Canal web",
 };
 
+/** Délai max avant abandon (génération locale Ollama souvent > 1 min sur CPU). */
+const STREAM_TIMEOUT_MS = 300_000;
+
+function parseNdjsonLines(buf: string, onEvent: (ev: { type: string; sources?: unknown[]; text?: string; message?: string }) => void) {
+  const lines = buf.split("\n");
+  const rest = lines.pop() ?? "";
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    try {
+      onEvent(JSON.parse(line) as { type: string; sources?: unknown[]; text?: string; message?: string });
+    } catch {
+      /* ligne partielle ou bruit */
+    }
+  }
+  return rest;
+}
+
 export default function ClientPage() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -44,16 +61,26 @@ export default function ClientPage() {
     setError(null);
     setLoading(true);
 
-    const userMsg = { id: Date.now(), role: "user", content: trimmed, meta: "Toi" };
-    const asstId  = Date.now() + 1;
-    setMessages(prev => [...prev, userMsg, { id: asstId, role: "assistant", content: "", meta: "Génération…" }]);
+    const userMsg: ChatMessage = { id: Date.now(), role: "user", content: trimmed, meta: "Toi" };
+    const asstId = Date.now() + 1;
+    const assistantPlaceholder: ChatMessage = {
+      id: asstId,
+      role: "assistant",
+      content: "",
+      meta: "Génération…",
+    };
+    setMessages((prev) => [...prev, userMsg, assistantPlaceholder]);
     setQuery("");
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS);
 
     try {
       const res = await fetch("/api/fastapi/rag/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: trimmed }),
+        signal: controller.signal,
       });
 
       if (!res.ok) {
@@ -69,29 +96,41 @@ export default function ClientPage() {
       const update = (content: string, meta: string) =>
         setMessages(prev => prev.map(m => m.id === asstId ? { ...m, content, meta } : m));
 
+      const handleEvent = (ev: { type: string; sources?: unknown[]; text?: string; message?: string }) => {
+        if (ev.type === "sources") {
+          srcCount = Array.isArray(ev.sources) ? ev.sources.length : 0;
+          update(
+            summary || "Sources trouvées. Génération de la réponse (Ollama peut prendre 1–3 min sur CPU)…",
+            `${srcCount} source(s)`,
+          );
+        } else if (ev.type === "summary_chunk") {
+          summary += ev.text ?? "";
+          update(summary, `${srcCount} source(s)`);
+        } else if (ev.type === "error") {
+          setError(ev.message ?? "Erreur IA.");
+          update(summary || "Erreur.", "Erreur");
+        } else if (ev.type === "done") {
+          update(summary || "Aucune réponse générée.", `${srcCount} source(s)`);
+        }
+      };
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         buf += decoder.decode(value, { stream: true });
-        const lines = buf.split("\n"); buf = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          let ev;
-          try {
-            ev = JSON.parse(line) as { type: string; sources?: unknown[]; text?: string; message?: string };
-          } catch {
-            continue;
-          }
-          if (ev.type === "sources") { srcCount = Array.isArray(ev.sources) ? ev.sources.length : 0; update(summary || "Analyse…", `${srcCount} source(s)`); }
-          else if (ev.type === "summary_chunk") { summary += ev.text ?? ""; update(summary, `${srcCount} source(s)`); }
-          else if (ev.type === "error") { setError(ev.message ?? "Erreur IA."); update(summary || "Erreur.", "Erreur"); break; }
-          else if (ev.type === "done") update(summary || "Aucune réponse générée.", `${srcCount} source(s)`);
-        }
+        buf = parseNdjsonLines(buf, handleEvent);
       }
+      buf = parseNdjsonLines(buf + "\n", handleEvent);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Impossible de joindre le service IA.";
+      const message =
+        err instanceof Error && err.name === "AbortError"
+          ? `Délai dépassé (${Math.round(STREAM_TIMEOUT_MS / 60_000)} min). Vérifie qu'Ollama tourne (port 11434) ou réessaie avec une question plus courte.`
+          : err instanceof Error
+            ? err.message
+            : "Impossible de joindre le service IA.";
       setError(message);
     } finally {
+      window.clearTimeout(timeoutId);
       setLoading(false);
     }
   };
