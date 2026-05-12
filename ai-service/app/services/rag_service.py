@@ -8,6 +8,23 @@ from app.services.llm_service import LLMService
 logger = logging.getLogger(__name__)
 
 
+def _format_rag_error(exc: BaseException) -> str:
+    raw = str(exc)
+    low = raw.lower()
+    if (
+        "database connection failed" in low
+        or "password authentication failed" in low
+        or "could not connect to server" in low
+        or ("fatal" in low and "postgres" in low)
+    ):
+        return (
+            "PostgreSQL refuse la connexion (mot de passe utilisateur, ou instance qui n’écoute pas sur ce host/port). "
+            "Vérifie ai-service/.env_file (DB_*), redémarre uvicorn, lance `python scripts/check_db_connection.py`. "
+            f"Détail : {raw}"
+        )
+    return f"Désolé, Mistral est trop sollicité : {raw}"
+
+
 class RAGService:
     def __init__(self):
         self.embedding_service = EmbeddingService()
@@ -78,7 +95,7 @@ class RAGService:
 
         except Exception as e:
             logger.error(f"Erreur critique dans le flux RAG: {e}")
-            yield {"type": "error", "message": f"Désolé, Mistral est trop sollicité : {str(e)}"}
+            yield {"type": "error", "message": _format_rag_error(e)}
 
     async def generate_full_answer(self, query: str, top_k: int = 5, channel: str = "web") -> str:
         """Génère une réponse RAG complète en un seul bloc (pour les Webhooks)."""
@@ -102,4 +119,4 @@ class RAGService:
 
         except Exception as e:
             logger.error(f"Erreur critique dans le flux complet RAG: {e}")
-            return f"⚠️ Une erreur interne est survenue lors de l'analyse (Mistral indisponible : {str(e)})"
+            return f"⚠️ {_format_rag_error(e)}"

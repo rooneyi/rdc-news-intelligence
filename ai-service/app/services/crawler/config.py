@@ -8,10 +8,18 @@ from pathlib import Path
 
 # Ensure env variables are loaded when running crawler CLI directly
 _project_root = Path(__file__).resolve().parents[3]
-_env_path = _project_root / ".env"
-if not _env_path.exists():
-    _env_path = _project_root / ".env_file"
-load_dotenv(dotenv_path=_env_path)
+_env_file = _project_root / ".env_file"
+_env = _project_root / ".env"
+_only = os.getenv("RDC_ENV_FILE_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}
+if _only:
+    if _env_file.exists():
+        load_dotenv(dotenv_path=_env_file, override=True)
+elif _env_file.exists():
+    load_dotenv(dotenv_path=_env_file, override=True)
+    if _env.exists():
+        load_dotenv(dotenv_path=_env, override=True)
+elif _env.exists():
+    load_dotenv(dotenv_path=_env, override=True)
 
 
 @dataclass

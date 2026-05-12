@@ -7,7 +7,8 @@
 - [ ] `cd ai-service`
 - [ ] Créer/activer l'environnement virtuel : `source .env/bin/activate`
 - [ ] Installer les dépendances : `pip install -r requirements.txt`
-- [ ] Vérifier `.env` ou `.env_file` (le premier présent dans `ai-service/` est chargé — voir `app/core/config.py`)
+- [ ] Vérifier `.env_file` (base) et éventuellement `.env` (surcharge) — les deux sont **fusionnés** : voir `app/core/config.py`. En local seulement `.env_file` : avant `uvicorn`, `export RDC_ENV_FILE_ONLY=1` ou lance `RDC_ENV_FILE_ONLY=1 ./scripts/dev-all.sh`.
+- [ ] PostgreSQL : une seule source pour le mot de passe — **`DB_PASSWORD`** (la ligne `DATABASE_URL` dans les fichiers est **ignorée** par défaut pour éviter un ancien mot de passe dans l’URL ; URL complète avec SSL : `DATABASE_FROM_URL_ONLY=1`).
 - [ ] Vérifier PostgreSQL est en cours d'exécution
 - [ ] Lancer : `python -m uvicorn app.main:app --reload`
 
