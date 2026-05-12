@@ -25,12 +25,19 @@ class RetrievalService:
             try:
                 cur.execute(
                     """
-                    SELECT id, title, content, link, source_id, hash
+                    SELECT
+                        id,
+                        title,
+                        content,
+                        link,
+                        source_id,
+                        hash,
+                        (1 - (embedding <=> %s::vector)) AS similarity
                     FROM articles
                     ORDER BY embedding <=> %s::vector
                     LIMIT %s
                     """,
-                    (query_embedding, limit)
+                    (query_embedding, query_embedding, limit)
                 )
                 results = cur.fetchall()
                 logger.debug(f"Retrieval: found {len(results)} similar articles")
@@ -42,6 +49,7 @@ class RetrievalService:
                         link=r[3],
                         source_id=r[4],
                         hash=r[5],
+                        similarity=float(r[6]) if r[6] is not None else None,
                     )
                     for r in results
                 ]

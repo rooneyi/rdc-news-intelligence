@@ -45,6 +45,58 @@ KNOWN_SOURCES = {
 SOURCES_FILE = Path(__file__).resolve().parents[4] / "data" / "crawler" / "sources.json"
 
 
+def _is_probable_syndication_feed(markup: str) -> bool:
+    head = (markup or "")[:4000].lower()
+    return any(
+        x in head
+        for x in (
+            "<rss",
+            "<feed",
+            "rdf:rdf",
+            "xmlns=\"http://purl.org/rss",
+            "<!-- generator: wordpress",
+        )
+    )
+
+
+def _urls_from_feed_markup(markup: str) -> list[str]:
+    """
+    Extrait les URLs d'articles depuis un flux RSS 2, Atom, ou RDF (ex. DW).
+    """
+    if not _is_probable_syndication_feed(markup):
+        return []
+    from bs4 import BeautifulSoup
+
+    try:
+        soup = BeautifulSoup(markup, "xml")
+    except Exception:  # noqa: BLE001
+        soup = BeautifulSoup(markup, "lxml")
+
+    urls: list[str] = []
+    for item in soup.find_all("item"):
+        link_el = item.find("link")
+        href = ""
+        if link_el is not None:
+            href = (link_el.string or link_el.get_text(strip=True) or link_el.get("href") or "").strip()
+        if not href:
+            guid = item.find("guid")
+            if guid and guid.string:
+                t = guid.string.strip()
+                if t.startswith("http"):
+                    href = t
+        if href.startswith("http") and href not in urls:
+            urls.append(href)
+
+    if not urls:
+        for entry in soup.find_all("entry"):
+            for link_el in entry.find_all("link"):
+                href = (link_el.get("href") or "").strip()
+                if href.startswith("http"):
+                    urls.append(href)
+                    break
+    return urls
+
+
 def _load_sources_from_file(path: Path = SOURCES_FILE) -> dict:
     if not path.exists():
         return {}
@@ -73,7 +125,14 @@ def _load_sources_from_file(path: Path = SOURCES_FILE) -> dict:
             if not source_id:
                 continue
             base_url = item.get("sourceUrl", "").rstrip("/")
-            listing_url = f"{base_url}/feed"  # basic feed by défaut
+            rss_url = (item.get("rssUrl") or "").strip()
+            fp = item.get("feedPath")
+            if fp is None or str(fp).strip() == "":
+                feed_suffix = "/feed"
+            else:
+                fp_s = str(fp).strip()
+                feed_suffix = fp_s if fp_s.startswith("/") else f"/{fp_s}"
+            listing_url = rss_url if rss_url else f"{base_url}{feed_suffix}"
             sources[source_id] = {
                 "base_url": base_url,
                 "listing_url": listing_url,
@@ -128,14 +187,21 @@ def get_article_urls(source_id: str, page_range: Optional[str], limit: Optional[
 
                 logger.info("Fetching listing page %d: %s", page, page_url)
                 resp = client.get(page_url)
-                soup = BeautifulSoup(resp.text, "lxml")
-                links = soup.select(selector)
-
-                for link in links:
+                text = resp.text
+                soup = BeautifulSoup(text, "lxml")
+                page_urls: list[str] = []
+                for link in soup.select(selector):
                     href = link.get("href", "")
                     if not href:
                         continue
                     full_url = href if href.startswith("http") else f"{base_url.rstrip('/')}/{href.lstrip('/')}"
+                    if full_url not in page_urls:
+                        page_urls.append(full_url)
+
+                if not page_urls:
+                    page_urls = _urls_from_feed_markup(text)
+
+                for full_url in page_urls:
                     if full_url not in urls:
                         urls.append(full_url)
 

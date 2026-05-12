@@ -17,10 +17,12 @@ class LLMService:
         # On met un timeout très large (5 min) pour éviter les erreurs de chargement du modèle
         self.timeout = timeout or 300
         # Paramètres mémoire/performance (garde le même modèle, réduit la RAM utilisée).
-        self.num_ctx = int(os.getenv("OLLAMA_NUM_CTX", "1024"))
+        # Contexte suffisant pour articles + prompt + réponse (sinon la sortie est tronquée).
+        self.num_ctx = int(os.getenv("OLLAMA_NUM_CTX", "2048"))
         self.num_batch = int(os.getenv("OLLAMA_NUM_BATCH", "32"))
-        self.msg_num_predict = int(os.getenv("OLLAMA_NUM_PREDICT_MSG", "120"))
-        self.web_num_predict = int(os.getenv("OLLAMA_NUM_PREDICT_WEB", "220"))
+        # Plafond de tokens générés : 120 pour messagerie coupait l’explication au milieu d’une phrase.
+        self.msg_num_predict = int(os.getenv("OLLAMA_NUM_PREDICT_MSG", "512"))
+        self.web_num_predict = int(os.getenv("OLLAMA_NUM_PREDICT_WEB", "512"))
         # Modèles de secours (optionnels) en cas d'échec sur le modèle principal.
         raw_fallbacks = os.getenv("OLLAMA_FALLBACK_MODELS", "mistral:latest,mistral")
         self.fallback_models = [m.strip() for m in raw_fallbacks.split(",") if m.strip()]
@@ -40,12 +42,12 @@ class LLMService:
         
         format_instruction = ""
         if channel in ["whatsapp", "telegram"]:
-            format_instruction = f"""Réponds au format COURT adapté pour messagerie ({channel}). Utilise des emojis.
-Limite ta réponse à quelques phrases maximum.
+            format_instruction = f"""Réponds pour messagerie ({channel}), ton clair et structuré, emojis discrets.
+Couvre les faits importants jusqu’au bout (verdict + pourquoi + nuances), sans digresser hors des articles.
 Format strict :
-🚨 VÉRIFICATION : (Commence par dire clairement si c'est VRAI, FAUX, IMPRÉCIS, ou NON VÉRIFIABLE)
-📝 EXPLICATION : (Explication très courte et claire sur les faits)
-🔗 SOURCES : (Donne les titres et les liens des sources fiables)"""
+🚨 VÉRIFICATION : (VRAI, FAUX, IMPRÉCIS, ou NON VÉRIFIABLE — une phrase nette)
+📝 EXPLICATION : (développement complet mais dense : qui, quoi, quand si présent dans les textes)
+🔗 SOURCES : (titres + liens des articles utilisés)"""
         else:
             format_instruction = """Format :
 📊 RÉSUMÉ : (Bref et percutant)
