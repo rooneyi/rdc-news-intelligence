@@ -122,8 +122,8 @@ cd /chemin/vers/ai-service   # ex. .../rdc-news-intelligence/ai-service
    Le fichier `ecosystem.config.cjs` détecte automatiquement `venv/`, `.venv/` ou `.env/`.  
    Sinon : `export RDC_AI_PYTHON=/chemin/vers/bin/python`.
 
-2. Le port par défaut est **8001** (aligné avec la section Nginx ci‑dessous). Pour changer :
-   `export APP_PORT=8001`
+2. Le port par défaut est **8000** (aligné avec la section Nginx ci‑dessous). Pour changer :
+   `export APP_PORT=8000`
 
 3. Démarre et persiste :
 
@@ -136,7 +136,7 @@ pm2 startup    # une fois : suivre la commande affichée pour l’auto-start au 
 Contrôle :
 
 ```bash
-curl -sS http://127.0.0.1:8001/health
+curl -sS http://127.0.0.1:8000/health
 pm2 logs rdc-ai-service --lines 80
 ```
 
@@ -153,7 +153,7 @@ server {
 
     # Redirection vers le service FastAPI
     location /ai/ {
-        proxy_pass http://127.0.0.1:8001/;
+        proxy_pass http://127.0.0.1:8000/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -168,7 +168,7 @@ server {
 
     # Webhooks Telegram / WhatsApp directement
     location /webhooks/ {
-        proxy_pass http://127.0.0.1:8001/webhooks/;
+        proxy_pass http://127.0.0.1:8000/webhooks/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -225,8 +225,8 @@ sudo systemctl restart rdc-ai-service
 ls -la /home/rooney/web/rooney-rdc/ai-service/current
 
 # Tester l'API localement
-curl http://localhost:8001/health
-curl http://localhost:8001/docs   # Swagger UI
+curl http://localhost:8000/health
+curl http://localhost:8000/docs   # Swagger UI
 
 # Rollback vers une version précédente
 ln -sfn /home/rooney/web/rooney-rdc/ai-service/releases/ANCIENNE_VERSION \
