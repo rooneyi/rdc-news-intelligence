@@ -8,6 +8,7 @@ from app.services.topic_gate_service import TopicGateService
 from app.services.whapi_cloud import (
     parse_whapi_payload,
     whapi_config_ok,
+    whapi_send_text,
     whapi_webhook_secret_expected,
 )
 import httpx
@@ -86,6 +87,9 @@ ocr_service = OCRService()
 topic_gate_service = TopicGateService()
 _whatsapp_queue: deque[dict] = deque()
 _whatsapp_queue_lock = asyncio.Lock()
+
+_whapi_queue: deque[dict] = deque()
+_whapi_queue_lock = asyncio.Lock()
 
 
 # Telegram limite les messages à 4096 caractères ; au-delà, editMessageText échoue sans mise à jour visible.
@@ -323,10 +327,46 @@ async def _send_whatsapp_text(
 ) -> None:
     """
     Envoie la réponse WhatsApp :
-    - ``transport="whapi"`` → API Whapi.Cloud (``chat_id`` dans ``phone_number``)
+    - ``transport="whapi"`` → WHAPI_REPLY_RELAY_URL (VPS) ou API Whapi directe
     - sinon Meta direct ou relay (WHATSAPP_REPLY_RELAY_URL)
     """
     if transport == "whapi":
+        reply_relay_url = (os.getenv("WHAPI_REPLY_RELAY_URL") or "").strip()
+        if reply_relay_url:
+            relay_token = (
+                os.getenv("WHAPI_REPLY_RELAY_TOKEN")
+                or os.getenv("WHATSAPP_REPLY_RELAY_TOKEN")
+                or ""
+            ).strip()
+            timeout_seconds = float(
+                os.getenv("WHAPI_REPLY_RELAY_TIMEOUT")
+                or os.getenv("WHATSAPP_REPLY_RELAY_TIMEOUT")
+                or "15"
+            )
+            headers = {"Content-Type": "application/json"}
+            if relay_token:
+                headers["X-RDC-Relay-Token"] = relay_token
+            relay_body = {"to": phone_number, "body": body}
+            try:
+                async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                    resp = await client.post(
+                        reply_relay_url, json=relay_body, headers=headers
+                    )
+                if resp.status_code >= 400:
+                    logger.error(
+                        "[Whapi] Relay reponse en echec (status=%s, body=%s)",
+                        resp.status_code,
+                        resp.text[:800],
+                    )
+                    return
+                logger.info(
+                    "[Whapi] Reponse relayee -> %s (status=%s)",
+                    reply_relay_url,
+                    resp.status_code,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.error("[Whapi] Echec relay reponse vers %s: %s", reply_relay_url, e)
+            return
         await whapi_send_text(phone_number, body)
         return
 
@@ -538,6 +578,113 @@ async def _get_whatsapp_queue_size() -> int:
         return len(_whatsapp_queue)
 
 
+def _whapi_queue_auth_ok(token_from_header: str) -> bool:
+    expected = (
+        os.getenv("WHAPI_QUEUE_TOKEN") or os.getenv("WHATSAPP_QUEUE_TOKEN") or ""
+    ).strip()
+    if not expected:
+        return True
+    return token_from_header.strip() == expected
+
+
+async def _enqueue_whapi_payload(payload: dict) -> int:
+    async with _whapi_queue_lock:
+        _whapi_queue.append(payload)
+        return len(_whapi_queue)
+
+
+async def _pop_whapi_payload() -> dict | None:
+    async with _whapi_queue_lock:
+        if not _whapi_queue:
+            return None
+        return _whapi_queue.popleft()
+
+
+async def _get_whapi_queue_size() -> int:
+    async with _whapi_queue_lock:
+        return len(_whapi_queue)
+
+
+def _whapi_can_send_outbound() -> bool:
+    """Local : relay VPS ou envoi direct avec WHAPI_TOKEN."""
+    if (os.getenv("WHAPI_REPLY_RELAY_URL") or "").strip():
+        return True
+    return whapi_config_ok()
+
+
+def _schedule_whapi_processing(
+    payload: dict,
+    background_tasks: BackgroundTasks | None,
+) -> int:
+    """Parse Whapi JSON et planifie texte / image (webhook HTTP ou worker file)."""
+    inbound = parse_whapi_payload(payload)
+    if not inbound:
+        return 0
+
+    for item in inbound:
+        gate = item.is_group
+        logger.info(
+            "[Whapi] Dispatch kind=%s chat_id=%s topic_gate=%s",
+            item.kind,
+            item.chat_id if len(item.chat_id) < 80 else item.chat_id[:77] + "…",
+            gate,
+        )
+        if item.kind == "text":
+            if background_tasks is not None:
+                background_tasks.add_task(
+                    process_whatsapp_message,
+                    item.chat_id,
+                    item.text,
+                    gate,
+                    item.message_id,
+                    transport="whapi",
+                )
+            else:
+                asyncio.create_task(
+                    process_whatsapp_message(
+                        item.chat_id,
+                        item.text,
+                        gate,
+                        item.message_id,
+                        transport="whapi",
+                    )
+                )
+        else:
+            if background_tasks is not None:
+                background_tasks.add_task(
+                    process_whatsapp_image,
+                    item.chat_id,
+                    "",
+                    item.caption,
+                    gate,
+                    item.message_id,
+                    transport="whapi",
+                    media_download_url=item.image_url,
+                )
+            else:
+                asyncio.create_task(
+                    process_whatsapp_image(
+                        item.chat_id,
+                        "",
+                        item.caption,
+                        gate,
+                        item.message_id,
+                        transport="whapi",
+                        media_download_url=item.image_url,
+                    )
+                )
+    return len(inbound)
+
+
+async def _dispatch_whapi_payload(payload: dict) -> None:
+    """Consommateur de file (polling local) : même traitement que POST /whapi."""
+    n = _schedule_whapi_processing(payload, background_tasks=None)
+    if n == 0:
+        logger.info(
+            "[Whapi Queue] Payload sans message exploitable (statuts, from_me, vide, etc.)"
+        )
+
+
 async def _dispatch_whatsapp_payload(payload: dict, background_tasks: BackgroundTasks | None = None) -> None:
     try:
         entry = payload.get("entry", [])[0]
@@ -664,6 +811,60 @@ async def run_whatsapp_queue_polling() -> None:
 
         await asyncio.sleep(poll_interval)
 
+
+async def run_whapi_queue_polling() -> None:
+    """Worker local : lit la file Whapi sur le VPS (pull), même schéma que WhatsApp Meta."""
+    queue_pop_url = os.getenv("WHAPI_QUEUE_POP_URL", "").strip()
+    if not queue_pop_url:
+        logger.warning("WHAPI_QUEUE_POP_URL absent, polling Whapi queue desactive.")
+        return
+
+    queue_token = (
+        os.getenv("WHAPI_QUEUE_TOKEN") or os.getenv("WHATSAPP_QUEUE_TOKEN") or ""
+    ).strip()
+    poll_interval = float(os.getenv("WHAPI_QUEUE_POLL_INTERVAL", "2"))
+    timeout_seconds = float(os.getenv("WHAPI_QUEUE_TIMEOUT", "15"))
+    headers: dict[str, str] = {}
+    if queue_token:
+        headers["X-RDC-Queue-Token"] = queue_token
+
+    logger.info("[Whapi Queue] Polling actif sur %s", queue_pop_url)
+    while True:
+        try:
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                resp = await client.post(queue_pop_url, headers=headers)
+
+            if resp.status_code >= 400:
+                logger.warning(
+                    "[Whapi Queue] HTTP %s sur queue pop — utilise WHAPI_QUEUE_POP_URL="
+                    "http://127.0.0.1:<port>/webhooks/whapi/queue/pop si FastAPI local. Aperçu: %.120s",
+                    resp.status_code,
+                    (resp.text or "").replace("\n", " "),
+                )
+                await asyncio.sleep(poll_interval)
+                continue
+
+            try:
+                data = resp.json()
+            except ValueError:
+                logger.warning(
+                    "[Whapi Queue] Réponse non-JSON : %.120s",
+                    (resp.text or "").replace("\n", " "),
+                )
+                await asyncio.sleep(poll_interval)
+                continue
+
+            item = data.get("item")
+            if item:
+                await _dispatch_whapi_payload(item)
+                await asyncio.sleep(0.2)
+                continue
+        except Exception as e:
+            logger.error("[Whapi Queue] Erreur polling (%s): %r", type(e).__name__, e)
+
+        await asyncio.sleep(poll_interval)
+
+
 async def process_whatsapp_message(
     phone_number: str,
     query: str,
@@ -673,8 +874,10 @@ async def process_whatsapp_message(
     transport: str = "meta",
 ):
     if transport == "whapi":
-        if not whapi_config_ok():
-            logger.error("[Whapi] WHAPI_TOKEN manquant — impossible de répondre.")
+        if not _whapi_can_send_outbound():
+            logger.error(
+                "[Whapi] Ni WHAPI_REPLY_RELAY_URL ni WHAPI_TOKEN — impossible de répondre."
+            )
             return
     else:
         whatsapp_token, phone_id = _whatsapp_credentials()
@@ -718,8 +921,10 @@ async def process_whatsapp_image(
 ):
     """Traite une image : Meta (média_id) ou Whapi (URL HTTP). OCR local puis RAG texte."""
     if transport == "whapi":
-        if not whapi_config_ok():
-            logger.error("[Whapi] WHAPI_TOKEN manquant — impossible de répondre (image).")
+        if not _whapi_can_send_outbound():
+            logger.error(
+                "[Whapi] Ni WHAPI_REPLY_RELAY_URL ni WHAPI_TOKEN — impossible de répondre (image)."
+            )
             return
         if not (media_download_url and str(media_download_url).strip().startswith("http")):
             logger.error("[Whapi] media_download_url manquant pour l’image.")
@@ -935,8 +1140,12 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
 async def whapi_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Webhook Whapi.Cloud : format `messages[]` (text, link_preview, image + link, document image, etc.).
-    Les réponses utilisent WHAPI_TOKEN → POST sur WHAPI_API_BASE/messages/text.
-    Sécurité optionnelle : header X-RDC-Whapi-Secret == WHAPI_WEBHOOK_SECRET (si défini).
+
+    Mode **proxy VPS** : ``WHAPI_WEBHOOK_PROXY_ONLY`` met le JSON brut en file ;
+    la machine locale poll ``…/whapi/queue/pop`` puis répond via ``WHAPI_REPLY_RELAY_URL``
+    (``…/whapi/reply-relay`` sur le VPS) ou envoi direct si ``WHAPI_TOKEN`` local.
+
+    Sécurité optionnelle : header ``X-RDC-Whapi-Secret`` == ``WHAPI_WEBHOOK_SECRET`` (si défini).
     """
     peer = request.client.host if request.client else "?"
     logger.info("[Whapi] ← POST /webhooks/whapi (client=%s)", peer)
@@ -962,34 +1171,68 @@ async def whapi_webhook(request: Request, background_tasks: BackgroundTasks):
         preview = preview[:1200] + "…"
     logger.info("[Whapi] Payload (aperçu): %s", preview)
 
-    inbound = parse_whapi_payload(payload)
-    if not inbound:
-        return {"status": "ok", "handled": 0, "note": "aucun message exploitable (statuts, from_me, etc.)"}
+    proxy_only = os.getenv("WHAPI_WEBHOOK_PROXY_ONLY", "").lower() in {"1", "true", "yes"}
+    if proxy_only:
+        queue_size = await _enqueue_whapi_payload(payload)
+        logger.info(
+            "[Whapi] Mode proxy+queue actif: payload mis en file (taille=%s)",
+            queue_size,
+        )
+        return {"status": "queued", "queue_size": queue_size}
 
-    for item in inbound:
-        gate = item.is_group
-        if item.kind == "text":
-            background_tasks.add_task(
-                process_whatsapp_message,
-                item.chat_id,
-                item.text,
-                gate,
-                item.message_id,
-                transport="whapi",
-            )
-        else:
-            background_tasks.add_task(
-                process_whatsapp_image,
-                item.chat_id,
-                "",
-                item.caption,
-                gate,
-                item.message_id,
-                transport="whapi",
-                media_download_url=item.image_url,
-            )
+    handled = _schedule_whapi_processing(payload, background_tasks)
+    if not handled:
+        return {
+            "status": "ok",
+            "handled": 0,
+            "note": "aucun message exploitable (statuts, from_me, etc.)",
+        }
+    return {"status": "ok", "handled": handled}
 
-    return {"status": "ok", "handled": len(inbound)}
+
+@router.post("/whapi/queue/pop")
+async def whapi_queue_pop(request: Request):
+    """Lu par le worker local (pull) : même rôle que ``/whatsapp/queue/pop`` pour Meta."""
+    token = request.headers.get("X-RDC-Queue-Token", "")
+    if not _whapi_queue_auth_ok(token):
+        raise HTTPException(status_code=403, detail="Queue token invalide")
+
+    item = await _pop_whapi_payload()
+    remaining = await _get_whapi_queue_size()
+    logger.info(
+        "[Whapi Queue] → POST /webhooks/whapi/queue/pop item=%s remaining=%s",
+        "oui" if item else "vide",
+        remaining,
+    )
+    return {"status": "ok", "item": item, "remaining": remaining}
+
+
+@router.post("/whapi/reply-relay")
+async def whapi_reply_relay(request: Request):
+    """Remontée local → VPS : envoi réel vers Whapi (WHAPI_TOKEN uniquement sur le VPS)."""
+    expected_token = (
+        os.getenv("WHAPI_REPLY_RELAY_TOKEN")
+        or os.getenv("WHATSAPP_REPLY_RELAY_TOKEN")
+        or ""
+    ).strip()
+    received_token = request.headers.get("X-RDC-Relay-Token", "").strip()
+    if expected_token and received_token != expected_token:
+        raise HTTPException(status_code=403, detail="Relay token invalide")
+
+    body_json = await request.json()
+    phone_number = str(body_json.get("to", "")).strip()
+    body = str(body_json.get("body", "")).strip()
+    if not phone_number or not body:
+        raise HTTPException(status_code=422, detail="Champs 'to' et 'body' requis")
+
+    if not whapi_config_ok():
+        raise HTTPException(
+            status_code=503,
+            detail="WHAPI_TOKEN requis sur ce serveur pour relay Whapi",
+        )
+
+    await whapi_send_text(phone_number, body)
+    return {"status": "sent"}
 
 
 @router.post("/whatsapp")

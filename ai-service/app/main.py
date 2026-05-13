@@ -153,6 +153,45 @@ def _log_whatsapp_delivery_hints() -> None:
         )
 
 
+def _log_whapi_delivery_hints() -> None:
+    """Whapi n’atteint pas localhost ; proxy + file exige un worker de polling (comme Meta)."""
+    proxy_only = os.getenv("WHAPI_WEBHOOK_PROXY_ONLY", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    queue_poll = os.getenv("ENABLE_WHAPI_QUEUE_POLLING", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    pop_url = os.getenv("WHAPI_QUEUE_POP_URL", "").strip()
+    relay = os.getenv("WHAPI_REPLY_RELAY_URL", "").strip()
+
+    logger.info(
+        "[Startup][Whapi] WEBHOOK_PROXY_ONLY=%s ENABLE_WHAPI_QUEUE_POLLING=%s "
+        "POP_URL défini=%s REPLY_RELAY défini=%s",
+        proxy_only,
+        queue_poll,
+        bool(pop_url),
+        bool(relay),
+    )
+    if pop_url:
+        logger.info("[Startup][Whapi] WHAPI_QUEUE_POP_URL=%s", pop_url[:180])
+    if relay:
+        logger.info("[Startup][Whapi] WHAPI_REPLY_RELAY_URL=%s", relay[:180])
+
+    if proxy_only and not queue_poll:
+        logger.warning(
+            "[Startup][Whapi] Mode proxy+file sur cette instance sans polling : une autre machine doit "
+            "activer ENABLE_WHAPI_QUEUE_POLLING et WHAPI_QUEUE_POP_URL vers …/webhooks/whapi/queue/pop."
+        )
+    if queue_poll and not pop_url:
+        logger.warning(
+            "[Startup][Whapi] Polling activé mais WHAPI_QUEUE_POP_URL vide — aucune file Whapi distante."
+        )
+
+
 @app.get("/health", tags=["Health"], summary="Service health check")
 async def health_check():
     """
@@ -174,7 +213,7 @@ def _bootstrap() -> None:
     from app.api.routes.articles import router as articles_router
     from app.api.routes.webhooks import router as webhooks_router
     from app.services.telegram_polling import run_telegram_polling
-    from app.api.routes.webhooks import run_whatsapp_queue_polling
+    from app.api.routes.webhooks import run_whatsapp_queue_polling, run_whapi_queue_polling
 
     from app.scheduler import start_cron_jobs, stop_cron_jobs
 
@@ -189,6 +228,7 @@ def _bootstrap() -> None:
         _attach_project_file_handler(logging.getLogger().getEffectiveLevel())
         logger.info("[Startup] Service prêt — traces HTTP dans ce fichier et la console.")
         _log_whatsapp_delivery_hints()
+        _log_whapi_delivery_hints()
 
         if os.getenv("ENABLE_CRON_JOBS", "").lower() in {"1", "true", "yes"}:
             asyncio.create_task(start_cron_jobs())
@@ -201,6 +241,13 @@ def _bootstrap() -> None:
             logger.info(
                 "[Startup] Polling file WhatsApp actif → %s",
                 os.getenv("WHATSAPP_QUEUE_POP_URL", "(WHATSAPP_QUEUE_POP_URL non défini)"),
+            )
+
+        if os.getenv("ENABLE_WHAPI_QUEUE_POLLING", "").lower() in {"1", "true", "yes"}:
+            asyncio.create_task(run_whapi_queue_polling())
+            logger.info(
+                "[Startup] Polling file Whapi actif → %s",
+                os.getenv("WHAPI_QUEUE_POP_URL", "(WHAPI_QUEUE_POP_URL non défini)"),
             )
 
     @app.on_event("shutdown")
