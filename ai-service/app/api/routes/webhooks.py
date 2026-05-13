@@ -6,6 +6,7 @@ from app.services.rag_service import RAGService
 from app.services.ocr_service import OCRService
 from app.services.topic_gate_service import TopicGateService
 from app.services.whapi_cloud import (
+    decode_whapi_data_uri_image,
     parse_whapi_payload,
     whapi_config_ok,
     whapi_send_text,
@@ -660,6 +661,7 @@ def _schedule_whapi_processing(
                     item.message_id,
                     transport="whapi",
                     media_download_url=item.image_url,
+                    media_inline_data_uri=item.image_data_uri,
                 )
             else:
                 asyncio.create_task(
@@ -671,6 +673,7 @@ def _schedule_whapi_processing(
                         item.message_id,
                         transport="whapi",
                         media_download_url=item.image_url,
+                        media_inline_data_uri=item.image_data_uri,
                     )
                 )
     return len(inbound)
@@ -680,8 +683,15 @@ async def _dispatch_whapi_payload(payload: dict) -> None:
     """Consommateur de file (polling local) : même traitement que POST /whapi."""
     n = _schedule_whapi_processing(payload, background_tasks=None)
     if n == 0:
+        hint = ""
+        raw = payload.get("messages")
+        if isinstance(raw, list) and raw:
+            m0 = raw[0]
+            if isinstance(m0, dict):
+                hint = f" premier_type={m0.get('type')!r} from_me={m0.get('from_me')}"
         logger.info(
-            "[Whapi Queue] Payload sans message exploitable (statuts, from_me, vide, etc.)"
+            "[Whapi Queue] Payload sans message exploitable (statuts, from_me, parse vide, etc.)%s",
+            hint,
         )
 
 
@@ -918,16 +928,27 @@ async def process_whatsapp_image(
     *,
     transport: str = "meta",
     media_download_url: str | None = None,
+    media_inline_data_uri: str | None = None,
 ):
-    """Traite une image : Meta (média_id) ou Whapi (URL HTTP). OCR local puis RAG texte."""
+    """Traite une image : Meta (média_id) ou Whapi (URL HTTP ou preview data:image du webhook)."""
     if transport == "whapi":
         if not _whapi_can_send_outbound():
             logger.error(
                 "[Whapi] Ni WHAPI_REPLY_RELAY_URL ni WHAPI_TOKEN — impossible de répondre (image)."
             )
             return
-        if not (media_download_url and str(media_download_url).strip().startswith("http")):
-            logger.error("[Whapi] media_download_url manquant pour l’image.")
+        has_http = bool(
+            media_download_url and str(media_download_url).strip().startswith("http")
+        )
+        has_data = bool(
+            media_inline_data_uri
+            and str(media_inline_data_uri).strip().startswith("data:image")
+        )
+        if not has_http and not has_data:
+            logger.error(
+                "[Whapi] Aucune image exploitable : pas de lien HTTP (Auto Download) "
+                "ni preview data:image dans le webhook."
+            )
             return
     else:
         whatsapp_token, phone_id = _whatsapp_credentials()
@@ -943,11 +964,31 @@ async def process_whatsapp_image(
     media_timeout = float(os.getenv("WHATSAPP_MEDIA_TIMEOUT", "90"))
     ref = media_id or "whapi-url"
 
+    image_bytes_preview: bytes | None = None
+    if transport == "whapi" and media_inline_data_uri and not (
+        media_download_url and str(media_download_url).strip().startswith("http")
+    ):
+        image_bytes_preview = decode_whapi_data_uri_image(str(media_inline_data_uri).strip())
+        if not image_bytes_preview:
+            logger.error("[Whapi] Preview data:image illisible ou trop court.")
+            await _send_whatsapp_text(
+                phone_number,
+                "❌ Image reçue mais preview illisible. Active « Auto Download » sur Whapi ou renvoie l’image.",
+                transport=transport,
+            )
+            return
+        logger.info(
+            "[Whapi] Image depuis preview webhook (%s octets) — préfère Auto Download pour pleine taille.",
+            len(image_bytes_preview),
+        )
+
     try:
         async with httpx.AsyncClient(timeout=media_timeout) as client:
             image_bytes: bytes
 
-            if media_download_url and transport == "whapi":
+            if image_bytes_preview is not None:
+                image_bytes = image_bytes_preview
+            elif media_download_url and transport == "whapi":
                 img_resp = await client.get(str(media_download_url).strip())
                 if img_resp.status_code >= 400 or not img_resp.content:
                     logger.error(
