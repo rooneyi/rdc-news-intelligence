@@ -1,9 +1,15 @@
+import json
 import logging
 import re
 from fastapi import APIRouter, Request, BackgroundTasks, HTTPException, Response
 from app.services.rag_service import RAGService
 from app.services.ocr_service import OCRService
 from app.services.topic_gate_service import TopicGateService
+from app.services.whapi_cloud import (
+    parse_whapi_payload,
+    whapi_config_ok,
+    whapi_webhook_secret_expected,
+)
 import httpx
 import os
 import asyncio
@@ -68,6 +74,14 @@ def _pop_whatsapp_chunk(
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _whatsapp_credentials() -> tuple[str, str]:
+    """Token et phone id sans espaces / retours ligne (erreurs Meta fréquentes si .env mal collé)."""
+    return (
+        (os.getenv("WHATSAPP_TOKEN") or "").strip(),
+        (os.getenv("WHATSAPP_PHONE_ID") or "").strip(),
+    )
 ocr_service = OCRService()
 topic_gate_service = TopicGateService()
 _whatsapp_queue: deque[dict] = deque()
@@ -228,8 +242,7 @@ async def process_telegram_message(chat_id: str, query: str):
 
 
 async def _send_whatsapp_text_direct(phone_number: str, body: str) -> dict:
-    whatsapp_token = os.getenv("WHATSAPP_TOKEN")
-    phone_id = os.getenv("WHATSAPP_PHONE_ID")
+    whatsapp_token, phone_id = _whatsapp_credentials()
     if not whatsapp_token or not phone_id:
         logger.error("Tokens WhatsApp manquants")
         return
@@ -276,8 +289,7 @@ async def _whatsapp_mark_read_and_show_typing(wa_message_id: str | None) -> None
     """
     if not (wa_message_id and str(wa_message_id).strip()):
         return
-    whatsapp_token = os.getenv("WHATSAPP_TOKEN")
-    phone_id = os.getenv("WHATSAPP_PHONE_ID")
+    whatsapp_token, phone_id = _whatsapp_credentials()
     if not whatsapp_token or not phone_id:
         return
     url = f"https://graph.facebook.com/v17.0/{phone_id}/messages"
@@ -303,12 +315,21 @@ async def _whatsapp_mark_read_and_show_typing(wa_message_id: str | None) -> None
         logger.warning("[WhatsApp] Indicateur frappe: %s", e)
 
 
-async def _send_whatsapp_text(phone_number: str, body: str) -> None:
+async def _send_whatsapp_text(
+    phone_number: str,
+    body: str,
+    *,
+    transport: str = "meta",
+) -> None:
     """
-    Envoie la reponse WhatsApp:
-    - direct vers Meta (mode standard)
-    - ou via un backend relay (mode local -> prod -> Meta)
+    Envoie la réponse WhatsApp :
+    - ``transport="whapi"`` → API Whapi.Cloud (``chat_id`` dans ``phone_number``)
+    - sinon Meta direct ou relay (WHATSAPP_REPLY_RELAY_URL)
     """
+    if transport == "whapi":
+        await whapi_send_text(phone_number, body)
+        return
+
     reply_relay_url = os.getenv("WHATSAPP_REPLY_RELAY_URL", "").strip()
     if not reply_relay_url:
         await _send_whatsapp_text_direct(phone_number, body)
@@ -340,7 +361,12 @@ async def _send_whatsapp_text(phone_number: str, body: str) -> None:
         logger.error("[WhatsApp] Echec relay reponse vers %s: %s", reply_relay_url, e)
 
 
-async def _send_whatsapp_long_body(phone_number: str, body: str) -> None:
+async def _send_whatsapp_long_body(
+    phone_number: str,
+    body: str,
+    *,
+    transport: str = "meta",
+) -> None:
     """
     Envoie un texte complet. Une seule requête Meta si body <= WHATSAPP_CHUNK_MAX_CHARS.
     Au-delà, découpage propre (pas au milieu des URLs) pour respecter la limite ~4096.
@@ -351,19 +377,19 @@ async def _send_whatsapp_long_body(phone_number: str, body: str) -> None:
     chunk_max = int(os.getenv("WHATSAPP_CHUNK_MAX_CHARS", "3800"))
     chunk_min = int(os.getenv("WHATSAPP_CHUNK_MIN_CHARS", "350"))
     if len(body) <= chunk_max:
-        await _send_whatsapp_text(phone_number, body)
+        await _send_whatsapp_text(phone_number, body, transport=transport)
         return
 
     rest = body
     while rest.strip():
         if len(rest) <= chunk_max:
-            await _send_whatsapp_text(phone_number, rest.strip())
+            await _send_whatsapp_text(phone_number, rest.strip(), transport=transport)
             break
         to_send, rest = _pop_whatsapp_chunk(rest, chunk_min, chunk_max, force=True)
         if not to_send:
-            await _send_whatsapp_text(phone_number, rest.strip())
+            await _send_whatsapp_text(phone_number, rest.strip(), transport=transport)
             break
-        await _send_whatsapp_text(phone_number, to_send)
+        await _send_whatsapp_text(phone_number, to_send, transport=transport)
 
 
 async def _stream_whatsapp_response(
@@ -371,6 +397,7 @@ async def _stream_whatsapp_response(
     query: str,
     *,
     wa_message_id: str | None = None,
+    transport: str = "meta",
 ) -> None:
     rag_service = RAGService()
     text_buffer = ""
@@ -392,7 +419,7 @@ async def _stream_whatsapp_response(
         "true",
         "yes",
     }:
-        await _send_whatsapp_text(phone_number, "🔎 Analyse en cours…")
+        await _send_whatsapp_text(phone_number, "🔎 Analyse en cours…", transport=transport)
 
     async for event in rag_service.generate_answer_stream(
         query,
@@ -414,13 +441,14 @@ async def _stream_whatsapp_response(
                     )
                     if not to_send:
                         break
-                    await _send_whatsapp_text(phone_number, to_send)
+                    await _send_whatsapp_text(phone_number, to_send, transport=transport)
             continue
 
         if event_type == "error":
             await _send_whatsapp_text(
                 phone_number,
                 event.get("message", "Erreur interne RAG"),
+                transport=transport,
             )
             return
 
@@ -430,17 +458,17 @@ async def _stream_whatsapp_response(
     if stream_while:
         while text_buffer.strip():
             if len(text_buffer) < chunk_min:
-                await _send_whatsapp_text(phone_number, text_buffer.strip())
+                await _send_whatsapp_text(phone_number, text_buffer.strip(), transport=transport)
                 break
             to_send, text_buffer = _pop_whatsapp_chunk(
                 text_buffer, chunk_min, chunk_max, force=True
             )
             if not to_send:
-                await _send_whatsapp_text(phone_number, text_buffer.strip())
+                await _send_whatsapp_text(phone_number, text_buffer.strip(), transport=transport)
                 break
-            await _send_whatsapp_text(phone_number, to_send)
+            await _send_whatsapp_text(phone_number, to_send, transport=transport)
     else:
-        await _send_whatsapp_long_body(phone_number, text_buffer)
+        await _send_whatsapp_long_body(phone_number, text_buffer, transport=transport)
 
     if sources:
         lines = []
@@ -451,6 +479,7 @@ async def _stream_whatsapp_response(
         await _send_whatsapp_long_body(
             phone_number,
             "🔗 SOURCES LOCALES :\n" + "\n".join(lines),
+            transport=transport,
         )
 
 
@@ -516,6 +545,9 @@ async def _dispatch_whatsapp_payload(payload: dict, background_tasks: Background
         value = changes.get("value", {})
 
         if "messages" not in value:
+            logger.info(
+                "[WhatsApp] Payload sans messages (accusé livraison / statut) — pas de RAG."
+            )
             return
 
         msg = value["messages"][0]
@@ -572,6 +604,7 @@ async def _dispatch_whatsapp_payload(payload: dict, background_tasks: Background
                     _send_whatsapp_text(
                         phone_number,
                         "❌ Impossible de récupérer cette image (identifiant média manquant). Réessaie ou envoie une capture plus légère.",
+                        transport="meta",
                     )
                 )
     except Exception as e:
@@ -636,12 +669,18 @@ async def process_whatsapp_message(
     query: str,
     require_topic_gate: bool = False,
     wa_message_id: str | None = None,
+    *,
+    transport: str = "meta",
 ):
-    whatsapp_token = os.getenv("WHATSAPP_TOKEN")
-    phone_id = os.getenv("WHATSAPP_PHONE_ID")
-    if not whatsapp_token or not phone_id:
-        logger.error("Tokens WhatsApp manquants")
-        return
+    if transport == "whapi":
+        if not whapi_config_ok():
+            logger.error("[Whapi] WHAPI_TOKEN manquant — impossible de répondre.")
+            return
+    else:
+        whatsapp_token, phone_id = _whatsapp_credentials()
+        if not whatsapp_token or not phone_id:
+            logger.error("Tokens WhatsApp manquants")
+            return
 
     if require_topic_gate:
         decision = await topic_gate_service.classify(query)
@@ -657,11 +696,12 @@ async def process_whatsapp_message(
                     phone_number,
                     "ℹ️ Dans les groupes, ce bot ne répond qu’aux messages liés à l’actualité RDC "
                     "(politique, sport, santé, sécurité). Reformule avec des mots-clés du contexte RDC.",
+                    transport=transport,
                 )
             return
 
     try:
-        await _stream_whatsapp_response(phone_number, query, wa_message_id=wa_message_id)
+        await _stream_whatsapp_response(phone_number, query, wa_message_id=wa_message_id, transport=transport)
     except Exception as e:
         logger.error(f"Erreur envoi WhatsApp: {e}")
 
@@ -672,56 +712,117 @@ async def process_whatsapp_image(
     caption: str | None = None,
     require_topic_gate: bool = False,
     wa_message_id: str | None = None,
+    *,
+    transport: str = "meta",
+    media_download_url: str | None = None,
 ):
-    """Traite une image reçue sur WhatsApp : OCR local puis RAG texte."""
-    whatsapp_token = os.getenv("WHATSAPP_TOKEN")
-    phone_id = os.getenv("WHATSAPP_PHONE_ID")
-    if not whatsapp_token or not phone_id:
-        logger.error("Tokens WhatsApp manquants")
-        return
+    """Traite une image : Meta (média_id) ou Whapi (URL HTTP). OCR local puis RAG texte."""
+    if transport == "whapi":
+        if not whapi_config_ok():
+            logger.error("[Whapi] WHAPI_TOKEN manquant — impossible de répondre (image).")
+            return
+        if not (media_download_url and str(media_download_url).strip().startswith("http")):
+            logger.error("[Whapi] media_download_url manquant pour l’image.")
+            return
+    else:
+        whatsapp_token, phone_id = _whatsapp_credentials()
+        if not whatsapp_token or not phone_id:
+            logger.error("Tokens WhatsApp manquants")
+            return
 
-    base_headers = {"Authorization": f"Bearer {whatsapp_token}"}
+    base_headers: dict[str, str] = {}
+    if transport != "whapi":
+        wt, _ = _whatsapp_credentials()
+        base_headers = {"Authorization": f"Bearer {wt}"}
+
+    media_timeout = float(os.getenv("WHATSAPP_MEDIA_TIMEOUT", "90"))
+    ref = media_id or "whapi-url"
 
     try:
-        async with httpx.AsyncClient() as client:
-            # 1. Récupérer l'URL du média
-            meta_resp = await client.get(
-                f"https://graph.facebook.com/v17.0/{media_id}", headers=base_headers
-            )
-            meta_data = meta_resp.json()
-            if meta_resp.status_code >= 400:
-                logger.error(
-                    "[WhatsApp] Meta média %s (status=%s): %s",
-                    media_id,
-                    meta_resp.status_code,
-                    meta_data,
+        async with httpx.AsyncClient(timeout=media_timeout) as client:
+            image_bytes: bytes
+
+            if media_download_url and transport == "whapi":
+                img_resp = await client.get(str(media_download_url).strip())
+                if img_resp.status_code >= 400 or not img_resp.content:
+                    logger.error(
+                        "[Whapi] Téléchargement image refusé (status=%s, octets=%s)",
+                        img_resp.status_code,
+                        len(img_resp.content or b""),
+                    )
+                    await _send_whatsapp_text(
+                        phone_number,
+                        "❌ Impossible de télécharger l’image (lien Whapi). Active « Auto Download » sur Whapi ou réessaie.",
+                        transport=transport,
+                    )
+                    return
+                image_bytes = img_resp.content
+            else:
+                # Meta Cloud API
+                meta_resp = await client.get(
+                    f"https://graph.facebook.com/v17.0/{media_id}", headers=base_headers
                 )
+                meta_data = meta_resp.json()
+                if meta_resp.status_code >= 400:
+                    logger.error(
+                        "[WhatsApp] Meta média %s (status=%s): %s",
+                        media_id,
+                        meta_resp.status_code,
+                        meta_data,
+                    )
+                    await _send_whatsapp_text(
+                        phone_number,
+                        "❌ Impossible de télécharger l'image depuis WhatsApp (vérifie le token / les permissions média).",
+                        transport=transport,
+                    )
+                    return
+                media_url = meta_data.get("url")
+                if not media_url:
+                    logger.error("[WhatsApp] Impossible de récupérer l'URL du média: %s", meta_data)
+                    await _send_whatsapp_text(
+                        phone_number,
+                        "❌ Impossible d'accéder au fichier image via l'API Meta.",
+                        transport=transport,
+                    )
+                    return
+
+                img_resp = await client.get(media_url, headers=base_headers)
+                if img_resp.status_code >= 400 or not img_resp.content:
+                    logger.error(
+                        "[WhatsApp] Téléchargement binaire image refusé (status=%s, octets=%s)",
+                        img_resp.status_code,
+                        len(img_resp.content or b""),
+                    )
+                    await _send_whatsapp_text(
+                        phone_number,
+                        "❌ Meta n'a pas renvoyé le fichier image (réessaie : les liens média expirent vite).",
+                        transport=transport,
+                    )
+                    return
+
+                image_bytes = img_resp.content
+
+            try:
+                extracted_text = ocr_service.extract_text(image_bytes)
+            except Exception as ocr_exc:  # noqa: BLE001
+                logger.exception("[WhatsApp] Échec OCR (image ref=%s): %s", ref, ocr_exc)
                 await _send_whatsapp_text(
                     phone_number,
-                    "❌ Impossible de télécharger l'image depuis WhatsApp (vérifie le token / les permissions média).",
-                )
-                return
-            media_url = meta_data.get("url")
-            if not media_url:
-                logger.error("[WhatsApp] Impossible de récupérer l'URL du média: %s", meta_data)
-                await _send_whatsapp_text(
-                    phone_number,
-                    "❌ Impossible d'accéder au fichier image via l'API Meta.",
+                    "❌ Lecture OCR impossible. Sur la machine qui traite les images, installe Tesseract "
+                    "(ex. Debian/Ubuntu : "
+                    "`sudo apt install tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng`) "
+                    "et vérifie Python `pillow` + `pytesseract`.",
+                    transport=transport,
                 )
                 return
 
-            # 2. Télécharger l'image
-            img_resp = await client.get(media_url, headers=base_headers)
-            image_bytes = img_resp.content
-
-            # 3. OCR local
-            extracted_text = ocr_service.extract_text(image_bytes)
             combined_query = _build_combined_message(caption, extracted_text)
             if not combined_query:
                 logger.info("[WhatsApp] Aucun texte exploitable extrait de l'image pour %s", phone_number)
                 await _send_whatsapp_text(
                     phone_number,
                     "❌ Impossible d'extraire du texte de cette image. Ajoute une légende avec ta question, ou envoie une image avec du texte lisible.",
+                    transport=transport,
                 )
                 return
 
@@ -738,8 +839,12 @@ async def process_whatsapp_image(
                     )
                     return
 
-            # 4. RAG texte en streaming par morceaux
-            await _stream_whatsapp_response(phone_number, combined_query, wa_message_id=wa_message_id)
+            await _stream_whatsapp_response(
+                phone_number,
+                combined_query,
+                wa_message_id=wa_message_id,
+                transport=transport,
+            )
 
     except Exception as e:  # noqa: BLE001
         logger.exception("Erreur traitement image WhatsApp: %s", e)
@@ -747,6 +852,7 @@ async def process_whatsapp_image(
             await _send_whatsapp_text(
                 phone_number,
                 "⚠️ Erreur technique lors du traitement de l'image. Réessaie dans un instant.",
+                transport=transport,
             )
         except Exception as send_err:  # noqa: BLE001
             logger.error("[WhatsApp] Impossible d'envoyer le message d'erreur image: %s", send_err)
@@ -824,13 +930,89 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
         
     return {"status": "ok"}
 
+
+@router.post("/whapi")
+async def whapi_webhook(request: Request, background_tasks: BackgroundTasks):
+    """
+    Webhook Whapi.Cloud : format `messages[]` (text, link_preview, image + link, document image, etc.).
+    Les réponses utilisent WHAPI_TOKEN → POST sur WHAPI_API_BASE/messages/text.
+    Sécurité optionnelle : header X-RDC-Whapi-Secret == WHAPI_WEBHOOK_SECRET (si défini).
+    """
+    peer = request.client.host if request.client else "?"
+    logger.info("[Whapi] ← POST /webhooks/whapi (client=%s)", peer)
+
+    expected_secret = whapi_webhook_secret_expected()
+    if expected_secret:
+        got = request.headers.get("X-RDC-Whapi-Secret", "").strip()
+        if got != expected_secret:
+            logger.warning("[Whapi] Secret webhook refusé")
+            raise HTTPException(status_code=403, detail="Secret webhook invalide")
+
+    try:
+        payload = await request.json()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[Whapi] Corps JSON invalide : %s", exc)
+        raise HTTPException(status_code=400, detail="JSON invalide") from exc
+
+    try:
+        preview = json.dumps(payload, ensure_ascii=False)
+    except Exception:
+        preview = str(payload)[:800]
+    if len(preview) > 1200:
+        preview = preview[:1200] + "…"
+    logger.info("[Whapi] Payload (aperçu): %s", preview)
+
+    inbound = parse_whapi_payload(payload)
+    if not inbound:
+        return {"status": "ok", "handled": 0, "note": "aucun message exploitable (statuts, from_me, etc.)"}
+
+    for item in inbound:
+        gate = item.is_group
+        if item.kind == "text":
+            background_tasks.add_task(
+                process_whatsapp_message,
+                item.chat_id,
+                item.text,
+                gate,
+                item.message_id,
+                transport="whapi",
+            )
+        else:
+            background_tasks.add_task(
+                process_whatsapp_image,
+                item.chat_id,
+                "",
+                item.caption,
+                gate,
+                item.message_id,
+                transport="whapi",
+                media_download_url=item.image_url,
+            )
+
+    return {"status": "ok", "handled": len(inbound)}
+
+
 @router.post("/whatsapp")
 async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Webhook POST pour WhatsApp Cloud API : Reçoit les messages.
     """
-    payload = await request.json()
-    logger.info(f"WhatsApp webhook reçu : {payload}")
+    peer = request.client.host if request.client else "?"
+    logger.info("[WhatsApp] ← POST /webhooks/whatsapp (client=%s)", peer)
+
+    try:
+        payload = await request.json()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[WhatsApp] Corps JSON invalide ou vide : %s", exc)
+        raise HTTPException(status_code=400, detail="JSON invalide") from exc
+
+    try:
+        preview = json.dumps(payload, ensure_ascii=False)
+    except Exception:
+        preview = str(payload)[:800]
+    if len(preview) > 1200:
+        preview = preview[:1200] + "…"
+    logger.info("[WhatsApp] Payload reçu (aperçu): %s", preview)
     is_forwarded_payload = request.headers.get("X-RDC-Forwarded", "").lower() == "true"
     expected_forward_token = os.getenv("WHATSAPP_FORWARD_TOKEN", "").strip()
     received_forward_token = request.headers.get("X-RDC-Forward-Token", "").strip()
@@ -866,6 +1048,11 @@ async def whatsapp_queue_pop(request: Request):
 
     item = await _pop_whatsapp_payload()
     remaining = await _get_whatsapp_queue_size()
+    logger.info(
+        "[WhatsApp Queue] → POST /webhooks/whatsapp/queue/pop item=%s remaining=%s",
+        "oui" if item else "vide",
+        remaining,
+    )
     return {"status": "ok", "item": item, "remaining": remaining}
 
 

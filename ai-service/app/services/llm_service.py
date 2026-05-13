@@ -40,19 +40,13 @@ class LLMService:
             f"[{i+1}] {a.title}: {a.content[:300]} (Lien: {a.link})" for i, a in enumerate(articles)
         ])
         
-        format_instruction = ""
-        if channel in ["whatsapp", "telegram"]:
-            format_instruction = f"""Réponds pour messagerie ({channel}), ton clair et structuré, emojis discrets.
+        # Même structure verdict + explication que WhatsApp/Telegram pour éviter des réponses « web » plus vagues.
+        format_instruction = f"""Réponds pour le canal « {channel} », ton clair et structuré, emojis discrets.
 Couvre les faits importants jusqu’au bout (verdict + pourquoi + nuances), sans digresser hors des articles.
 Format strict :
 🚨 VÉRIFICATION : (VRAI, FAUX, IMPRÉCIS, ou NON VÉRIFIABLE — une phrase nette)
 📝 EXPLICATION : (développement complet mais dense : qui, quoi, quand si présent dans les textes)
 🔗 SOURCES : (titres + liens des articles utilisés)"""
-        else:
-            format_instruction = """Format :
-📊 RÉSUMÉ : (Bref et percutant)
-📰 VÉRIFICATION : (Indique si l'information est confirmée, fausse ou nuancée)
-🔗 SOURCES : (Titres des articles)"""
 
         return f"""[INST] Tu es un expert fact-checker journaliste en RDC. Réponds à la question ou vérifie l'information en utilisant UNIQUEMENT les articles fournis.
 Si l'information n'est pas dans les articles, dis que tu ne peux pas vérifier. Ne crée aucune fausse information.
@@ -74,9 +68,10 @@ Articles de référence :
         prompt = self._build_prompt(query, articles, channel)
         url = f"{self.host}/api/generate"
         
-        # On limite le nombre de tokens générés pour réduire le temps de réponse.
-        # Réponse plus courte pour messageries.
-        max_tokens = self.web_num_predict if channel == "web" else self.msg_num_predict
+        # Web aligné sur la messagerie (OLLAMA_NUM_PREDICT_MSG) pour la même profondeur de réponse.
+        max_tokens = (
+            self.msg_num_predict if channel in {"whatsapp", "telegram", "web"} else self.web_num_predict
+        )
         attempts = self._model_candidates()
         last_error = "Erreur inconnue"
 

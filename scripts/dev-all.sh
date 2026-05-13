@@ -74,11 +74,22 @@ if [[ ! -d "$AI_DIR" || ! -d "$FRONTEND_DIR" ]]; then
   exit 1
 fi
 
-# Définir RDC_ENV_FILE_ONLY=1 avant ./dev-all.sh pour n'utiliser que ai-service/.env_file (ignorer .env).
+# RDC_ENV_FILE_ONLY : app/core/config.py ne lit cette variable qu’**avant** load_dotenv.
+# La mettre seulement dans .env_file ne suffit pas — il faut l’exporter pour uvicorn.
+# Ordre : variable d’environnement parente > détection dans .env_file (ligne RDC_ENV_FILE_ONLY=1).
+AI_ENV_PREFIX=""
+if [[ "${RDC_ENV_FILE_ONLY:-}" =~ ^(0|false|no|off)$ ]]; then
+  AI_ENV_PREFIX=""
+elif [[ "${RDC_ENV_FILE_ONLY:-}" =~ ^(1|true|yes|on)$ ]]; then
+  AI_ENV_PREFIX="export RDC_ENV_FILE_ONLY=1 && "
+elif [[ -f "$AI_DIR/.env_file" ]] && grep -qE '^[[:space:]]*RDC_ENV_FILE_ONLY[[:space:]]*=[[:space:]]*(1|true|yes|on)[[:space:]]*$' "$AI_DIR/.env_file" 2>/dev/null; then
+  AI_ENV_PREFIX="export RDC_ENV_FILE_ONLY=1 && "
+fi
+
 if [[ -x "$AI_DIR/.env/bin/python" ]]; then
-  AI_CMD="cd '$AI_DIR' && export PYTHONUNBUFFERED=1 && source .env/bin/activate && uvicorn app.main:app --host 127.0.0.1 --port $AI_PORT --reload"
+  AI_CMD="cd '$AI_DIR' && ${AI_ENV_PREFIX}export PYTHONUNBUFFERED=1 && source .env/bin/activate && uvicorn app.main:app --host 127.0.0.1 --port $AI_PORT --reload"
 else
-  AI_CMD="cd '$AI_DIR' && export PYTHONUNBUFFERED=1 && uvicorn app.main:app --host 127.0.0.1 --port $AI_PORT --reload"
+  AI_CMD="cd '$AI_DIR' && ${AI_ENV_PREFIX}export PYTHONUNBUFFERED=1 && uvicorn app.main:app --host 127.0.0.1 --port $AI_PORT --reload"
 fi
 
 log "Installing frontend dependencies (npm install)"

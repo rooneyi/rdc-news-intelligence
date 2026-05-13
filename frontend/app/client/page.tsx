@@ -19,8 +19,17 @@ const WELCOME: ChatMessage = {
   meta: "Canal web",
 };
 
-/** Délai max avant abandon (génération locale Ollama souvent > 1 min sur CPU). */
-const STREAM_TIMEOUT_MS = 300_000;
+/**
+ * Abandon si aucune donnée du flux pendant ce délai (pas un plafond fixe depuis le début).
+ * Ollama sur CPU peut dépasser 5 min ; par défaut 20 min d’inactivité entre deux chunks.
+ * Régler dans frontend/.env : NEXT_PUBLIC_RAG_STREAM_IDLE_MS=1200000 (millisecondes).
+ */
+const STREAM_IDLE_MS = (() => {
+  const raw = process.env.NEXT_PUBLIC_RAG_STREAM_IDLE_MS;
+  const n = raw ? Number.parseInt(raw, 10) : NaN;
+  if (Number.isFinite(n) && n >= 60_000) return Math.min(n, 3_600_000);
+  return 1_200_000;
+})();
 
 function parseNdjsonLines(buf: string, onEvent: (ev: { type: string; sources?: unknown[]; text?: string; message?: string }) => void) {
   const lines = buf.split("\n");
@@ -73,7 +82,11 @@ export default function ClientPage() {
     setQuery("");
 
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS);
+    let idleAbortId: ReturnType<typeof setTimeout> | undefined;
+    const resetIdleAbort = () => {
+      if (idleAbortId !== undefined) window.clearTimeout(idleAbortId);
+      idleAbortId = window.setTimeout(() => controller.abort(), STREAM_IDLE_MS);
+    };
 
     try {
       const res = await fetch("/api/fastapi/rag/stream", {
@@ -97,6 +110,7 @@ export default function ClientPage() {
         setMessages(prev => prev.map(m => m.id === asstId ? { ...m, content, meta } : m));
 
       const handleEvent = (ev: { type: string; sources?: unknown[]; text?: string; message?: string }) => {
+        resetIdleAbort();
         if (ev.type === "sources") {
           srcCount = Array.isArray(ev.sources) ? ev.sources.length : 0;
           update(
@@ -107,16 +121,19 @@ export default function ClientPage() {
           summary += ev.text ?? "";
           update(summary, `${srcCount} source(s)`);
         } else if (ev.type === "error") {
-          setError(ev.message ?? "Erreur IA.");
-          update(summary || "Erreur.", "Erreur");
+          const msg = ev.message ?? "Erreur IA.";
+          setError(msg);
+          update(msg, "Erreur");
         } else if (ev.type === "done") {
           update(summary || "Aucune réponse générée.", `${srcCount} source(s)`);
         }
       };
 
+      resetIdleAbort();
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        if (value?.byteLength) resetIdleAbort();
         buf += decoder.decode(value, { stream: true });
         buf = parseNdjsonLines(buf, handleEvent);
       }
@@ -124,13 +141,13 @@ export default function ClientPage() {
     } catch (err) {
       const message =
         err instanceof Error && err.name === "AbortError"
-          ? `Délai dépassé (${Math.round(STREAM_TIMEOUT_MS / 60_000)} min). Vérifie qu'Ollama tourne (port 11434) ou réessaie avec une question plus courte.`
+          ? `Aucune donnée reçue depuis ${Math.round(STREAM_IDLE_MS / 60_000)} min (flux interrompu ou bloqué). Vérifie Ollama (port 11434), FastAPI, et augmente NEXT_PUBLIC_RAG_STREAM_IDLE_MS si besoin.`
           : err instanceof Error
             ? err.message
             : "Impossible de joindre le service IA.";
       setError(message);
     } finally {
-      window.clearTimeout(timeoutId);
+      if (idleAbortId !== undefined) window.clearTimeout(idleAbortId);
       setLoading(false);
     }
   };
