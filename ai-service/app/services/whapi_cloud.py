@@ -5,6 +5,8 @@ Doc format messages : https://support.whapi.cloud/help-desk/receiving/webhooks/i
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 import os
 from dataclasses import dataclass
@@ -26,47 +28,72 @@ class WhapiInbound:
     text: str | None
     image_url: str | None
     caption: str | None
+    # Si pas de ``link`` HTTP (Auto Download off), Whapi envoie souvent ``preview`` data:image;base64,...
+    image_data_uri: str | None = None
+
+
+def decode_whapi_data_uri_image(data_uri: str) -> bytes | None:
+    """Décode ``data:image/...;base64,...`` renvoyé dans les webhooks Whapi."""
+    raw = (data_uri or "").strip()
+    if not raw.startswith("data:image") or "," not in raw:
+        return None
+    try:
+        b64 = raw.split(",", 1)[1].strip()
+        out = base64.b64decode(b64)
+        return out if len(out) > 32 else None
+    except (binascii.Error, ValueError, IndexError):
+        return None
 
 
 def _is_group_chat(chat_id: str) -> bool:
     return chat_id.endswith("@g.us")
 
 
-def _extract_text_and_media(msg: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
+def _extract_text_and_media(
+    msg: dict[str, Any],
+) -> tuple[str | None, str | None, str | None, str | None]:
     """
-    Retourne (texte pour RAG, url image si présente, légende).
+    Retourne (texte pour RAG, url image si présente, légende, data_uri preview image).
     """
     mtype = (msg.get("type") or "").lower()
     text_out: str | None = None
     image_url: str | None = None
     caption: str | None = None
+    data_uri: str | None = None
 
     if mtype == "text":
         t = msg.get("text") or {}
         if isinstance(t, dict):
             text_out = (t.get("body") or "").strip() or None
-        return text_out, None, None
+        return text_out, None, None, None
 
     if mtype == "link_preview":
         lp = msg.get("link_preview") or {}
         if isinstance(lp, dict):
             text_out = (lp.get("body") or "").strip() or None
-        return text_out, None, None
+        return text_out, None, None, None
 
     if mtype in {"image", "sticker", "video", "audio"}:
         blob = msg.get(mtype)
         if isinstance(blob, dict):
             caption = (blob.get("caption") or "").strip() or None
-            image_url = blob.get("link")
-            if isinstance(image_url, str) and image_url.startswith("http"):
-                return None, image_url, caption
+            link = blob.get("link")
+            if isinstance(link, str) and link.startswith("http"):
+                return None, link, caption, None
             prev = blob.get("preview")
             if isinstance(prev, str) and prev.startswith("data:image"):
-                logger.warning(
-                    "[Whapi] Média sans lien HTTP (preview base64 seulement). "
-                    "Active « Auto Download » sur Whapi ou envoie une image avec lien."
+                logger.info(
+                    "[Whapi] Média type=%s : pas de lien HTTP — traitement via preview embarqué "
+                    "(qualité réduite). Active « Auto Download » sur Whapi pour un lien pleine taille.",
+                    mtype,
                 )
-        return None, image_url, caption
+                return None, None, caption, prev
+            logger.info(
+                "[Whapi] Média type=%s ignoré : pas de ``link`` HTTP ni ``preview`` data:image "
+                "(active « Auto Download » ou renvoie une capture).",
+                mtype,
+            )
+        return None, None, caption, None
 
     if mtype == "document":
         doc = msg.get("document") or {}
@@ -76,11 +103,11 @@ def _extract_text_and_media(msg: dict[str, Any]) -> tuple[str | None, str | None
             mime = (doc.get("mime_type") or "").lower()
             if isinstance(link, str) and link.startswith("http"):
                 if mime.startswith("image/"):
-                    return None, link, caption
+                    return None, link, caption, None
                 text_out = caption or f"[document:{doc.get('file_name') or 'fichier'}]"
-                return text_out, None, caption
+                return text_out, None, caption, None
 
-    return None, None, None
+    return None, None, None, None
 
 
 def parse_whapi_payload(payload: dict[str, Any]) -> list[WhapiInbound]:
@@ -106,7 +133,7 @@ def parse_whapi_payload(payload: dict[str, Any]) -> list[WhapiInbound]:
         message_id = str(mid) if mid is not None else None
         is_group = _is_group_chat(chat_id)
 
-        text_part, image_url, caption = _extract_text_and_media(msg)
+        text_part, image_url, caption, image_data_uri = _extract_text_and_media(msg)
 
         if image_url:
             out.append(
@@ -118,6 +145,22 @@ def parse_whapi_payload(payload: dict[str, Any]) -> list[WhapiInbound]:
                     text=None,
                     image_url=image_url,
                     caption=caption,
+                    image_data_uri=None,
+                )
+            )
+            continue
+
+        if image_data_uri:
+            out.append(
+                WhapiInbound(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    is_group=is_group,
+                    kind="image",
+                    text=None,
+                    image_url=None,
+                    caption=caption,
+                    image_data_uri=image_data_uri,
                 )
             )
             continue
@@ -132,6 +175,7 @@ def parse_whapi_payload(payload: dict[str, Any]) -> list[WhapiInbound]:
                     text=text_part,
                     image_url=None,
                     caption=None,
+                    image_data_uri=None,
                 )
             )
             continue
