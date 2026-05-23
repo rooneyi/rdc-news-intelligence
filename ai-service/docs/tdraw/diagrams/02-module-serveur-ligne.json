@@ -1,0 +1,21 @@
+{
+  "title": "Module 2 — Serveur en ligne (VPS, file, relais)",
+  "nodes": [
+    { "id": "dns", "group": "Internet", "label": "rooney-rdc...\nHTTPS public", "color": "blue" },
+    { "id": "nginx", "group": "VPS", "label": "Reverse proxy\n(OpenLiteSpeed/nginx)", "color": "orange" },
+    { "id": "api", "group": "VPS", "label": "FastAPI\nuvicorn :8000", "color": "orange" },
+    { "id": "whapi_ep", "group": "Endpoints", "label": "POST /webhooks/whapi", "color": "black" },
+    { "id": "queue", "group": "Endpoints", "label": "File mémoire\ndeque Whapi", "color": "yellow" },
+    { "id": "pop", "group": "Endpoints", "label": "POST .../queue/pop", "color": "black" },
+    { "id": "relay", "group": "Endpoints", "label": "POST .../reply-relay\nWHAPI_TOKEN", "color": "black" },
+    { "id": "ocr_vps", "group": "Option", "label": "OCR sur VPS\n(si configuré)", "color": "grey" }
+  ],
+  "edges": [
+    { "from": "dns", "to": "nginx", "label": "" },
+    { "from": "nginx", "to": "api", "label": "proxy" },
+    { "from": "whapi_ep", "to": "queue", "label": "PROXY_ONLY" },
+    { "from": "pop", "to": "queue", "label": "FIFO pop" },
+    { "from": "relay", "to": "api", "label": "envoi Whapi" },
+    { "from": "whapi_ep", "to": "ocr_vps", "label": "image?" }
+  ]
+}

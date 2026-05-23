@@ -8,7 +8,7 @@ class EmbeddingService:
     """Service pour générer les embeddings avec lazy loading du modèle"""
 
     # Modèle multilingue recommandé pour le contenu en Français (RDC)
-    # Dimension 384, compatible avec ta colonne VECTOR(384)
+    # Dimension 384, stocké dans ChromaDB (cosine similarity)
     DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     DATASET_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 

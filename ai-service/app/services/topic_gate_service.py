@@ -300,6 +300,7 @@ class TopicGateService:
                         "options": {
                             "temperature": 0,
                             "num_predict": 120,
+                            "num_thread": 4,
                         },
                     },
                 )

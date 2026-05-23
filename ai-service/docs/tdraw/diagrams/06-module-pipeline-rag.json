@@ -1,0 +1,24 @@
+{
+  "title": "Module 6 — Pipeline RAG (recherche + génération)",
+  "nodes": [
+    { "id": "q", "group": "Entrée", "label": "Question utilisateur\n(channel=whatsapp)", "color": "green" },
+    { "id": "emb_q", "group": "Recherche", "label": "Embedding\nquestion", "color": "violet" },
+    { "id": "ret", "group": "Recherche", "label": "RetrievalService\n→ ChromaDB", "color": "violet" },
+    { "id": "cand", "group": "Recherche", "label": "~9 candidats\ntop_k × 3", "color": "blue" },
+    { "id": "rerank", "group": "Recherche", "label": "rerank Mistral\n(optionnel)", "color": "violet" },
+    { "id": "filt", "group": "Recherche", "label": "Filtre similarité\n≥ 0.40", "color": "red" },
+    { "id": "topk", "group": "Recherche", "label": "top_k = 3\narticles", "color": "blue" },
+    { "id": "llm", "group": "Génération", "label": "summarize_stream\nMistral/Ollama", "color": "orange" },
+    { "id": "out", "group": "Sortie", "label": "VÉRIFICATION\nEXPLICATION\nSOURCES", "color": "green" }
+  ],
+  "edges": [
+    { "from": "q", "to": "emb_q", "label": "" },
+    { "from": "emb_q", "to": "ret", "label": "" },
+    { "from": "ret", "to": "cand", "label": "cosinus" },
+    { "from": "cand", "to": "rerank", "label": "" },
+    { "from": "rerank", "to": "filt", "label": "" },
+    { "from": "filt", "to": "topk", "label": "" },
+    { "from": "topk", "to": "llm", "label": "contexte" },
+    { "from": "llm", "to": "out", "label": "stream" }
+  ]
+}

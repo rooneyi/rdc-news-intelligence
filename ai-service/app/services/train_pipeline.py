@@ -6,6 +6,8 @@ from typing import Optional
 
 from app.db.session import get_db_connection
 from app.services.embedding_service import EmbeddingService
+from app.services.vector_store_service import VectorStoreService
+from app.schemas.article import ArticleOut
 
 logger = logging.getLogger(__name__)
 
@@ -41,68 +43,79 @@ def _finish_run(cur, run_id: int, processed: int, reembedded: int, status: str, 
 
 
 def run_reembedding(batch_size: int = 50, force_all: bool = False, model_name: Optional[str] = None) -> dict:
-    """Re-embed les articles nouveaux (ou tous si force_all) et rafraîchit l'index vectoriel."""
+    """Re-embed les articles nouveaux (ou tous si force_all) et synchronise ChromaDB."""
     conn = get_db_connection()
     cur = conn.cursor()
     
     model_to_use = model_name or EmbeddingService.DATASET_MODEL
-    run_id = _start_run(cur, model_to_use, "re-embedding")
+    run_id = _start_run(cur, model_to_use, "re-embedding (ChromaDB)")
     conn.commit()
 
     processed = 0
     reembedded = 0
     try:
-        # 1. On récupère d'abord TOUS les IDs et contenus
+        # 1. On récupère les articles avec leurs metadata pour ChromaDB
         cutoff = None if force_all else _get_last_success_timestamp(cur)
+        query = "SELECT id, title, content, link, source_id, hash, categories, image FROM articles"
         if cutoff:
-            cur.execute("SELECT id, content FROM articles WHERE created_at > %s", (cutoff,))
+            cur.execute(query + " WHERE created_at > %s", (cutoff,))
         else:
-            cur.execute("SELECT id, content FROM articles")
+            cur.execute(query)
         
-        all_articles = cur.fetchall()
-        total_to_process = len(all_articles)
-        logger.info(f"Found {total_to_process} articles to re-embed")
+        all_articles_rows = cur.fetchall()
+        total_to_process = len(all_articles_rows)
+        logger.info(f"Found {total_to_process} articles to re-embed and sync to ChromaDB")
 
         embedder = EmbeddingService(model_name=model_to_use)
+        vector_store = VectorStoreService()
+
+        articles_batch = []
+        embeddings_batch = []
 
         # 2. On traite les articles
-        for article_id, content in all_articles:
+        for row in all_articles_rows:
             processed += 1
+            article_id, title, content, link, source_id, hash_val, categories, image = row
+            
             try:
                 embedding = embedder.generate(content)
-                cur.execute(
-                    "UPDATE articles SET embedding = %s WHERE id = %s",
-                    (embedding, article_id),
+                
+                article_out = ArticleOut(
+                    id=article_id,
+                    title=title,
+                    content=content,
+                    link=link,
+                    source_id=source_id,
+                    hash=hash_val,
+                    categories=categories or [],
+                    image=image
                 )
+                
+                articles_batch.append(article_out)
+                embeddings_batch.append(embedding)
                 reembedded += 1
             except Exception as e:
                 logger.error(f"Failed to embed article {article_id}: {e}")
             
-            if processed % batch_size == 0:
-                conn.commit()
-                logger.info(f"Progress: {processed}/{total_to_process} articles processed...")
+            if len(articles_batch) >= batch_size:
+                vector_store.add_articles(articles_batch, embeddings_batch)
+                articles_batch = []
+                embeddings_batch = []
+                logger.info(f"Progress: {processed}/{total_to_process} articles processed and synced...")
 
-        # Final commit pour les articles restants
-        conn.commit()
-
-        try:
-            logger.info("Refreshing vector index...")
-            # Syntaxe plus robuste pour REINDEX
-            cur.execute("REINDEX INDEX articles_embedding_idx;")
-            conn.commit()
-        except Exception as reindex_err:
-            conn.rollback() # On rollback uniquement l'erreur de reindex
-            logger.warning("Reindex pgvector failed (normal if index doesn't exist yet): %s", reindex_err)
+        # Final sync pour le dernier batch
+        if articles_batch:
+            vector_store.add_articles(articles_batch, embeddings_batch)
 
         _finish_run(cur, run_id, processed, reembedded, "success", None)
         conn.commit()
-        logger.info("Re-embedding terminé: processed=%s reembedded=%s", processed, reembedded)
+        logger.info("Re-embedding et sync ChromaDB terminé: processed=%s reembedded=%s", processed, reembedded)
         return {"processed": processed, "reembedded": reembedded, "run_id": run_id}
     except Exception as exc:
         conn.rollback()
         _finish_run(cur, run_id, processed, reembedded, "failed", str(exc))
         conn.commit()
-        logger.error("Re-embedding failed: %s", exc)
+        logger.error("Re-embedding/Sync failed: %s", exc)
         raise
     finally:
         cur.close()

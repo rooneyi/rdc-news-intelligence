@@ -1,0 +1,4 @@
+# Métadépôt : pour installer uniquement le service IA, utiliser :
+#   pip install -r ai-service/requirements.txt
+#
+-r ai-service/requirements.txt

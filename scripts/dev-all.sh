@@ -87,7 +87,7 @@ elif [[ -f "$AI_DIR/.env_file" ]] && grep -qE '^[[:space:]]*RDC_ENV_FILE_ONLY[[:
 fi
 
 if [[ -x "$AI_DIR/.env/bin/python" ]]; then
-  AI_CMD="cd '$AI_DIR' && ${AI_ENV_PREFIX}export PYTHONUNBUFFERED=1 && source .env/bin/activate && uvicorn app.main:app --host 127.0.0.1 --port $AI_PORT --reload"
+  AI_CMD="cd '$AI_DIR' && ${AI_ENV_PREFIX}export PYTHONUNBUFFERED=1 && source venv/bin/activate && uvicorn app.main:app --host 127.0.0.1 --port $AI_PORT --reload"
 else
   AI_CMD="cd '$AI_DIR' && ${AI_ENV_PREFIX}export PYTHONUNBUFFERED=1 && uvicorn app.main:app --host 127.0.0.1 --port $AI_PORT --reload"
 fi

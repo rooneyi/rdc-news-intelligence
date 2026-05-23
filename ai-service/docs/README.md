@@ -5,7 +5,7 @@ Ce service constitue le cerveau du projet. Il gère la vectorisation des article
 ## 🛠 Fonctionnalités Clés
 
 1. **Recherche Sémantique (RAG)** : 
-   - Utilise une base de données **pgvector** pour trouver les articles les plus proches de vos questions.
+   - Utilise une base de données **ChromaDB** pour trouver les articles les plus proches de vos questions.
    - Génère des réponses factuelles via **Mistral-7B** (Ollama).
 2. **Traitement d'Images (OCR)** : 
    - Extrait le texte des images/affiches pour vérifier leur contenu.
