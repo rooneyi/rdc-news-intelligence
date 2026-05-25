@@ -9,10 +9,33 @@ from dataclasses import dataclass
 
 import httpx
 from app.db.session import get_db_connection
+from app.services.embedding_service import EmbeddingService
 
 logger = logging.getLogger(__name__)
 
 GROUP_CHAT_TYPES = {"group", "supergroup"}
+
+THEME_ANCHORS = {
+    "politique": (
+        "Actualité politique en RDC: président Félix Tshisekedi, gouvernement, ministres, "
+        "élections, CENI, opposants comme Katumbi ou Fayulu, assemblée nationale et sénat. "
+        "Questions sur la direction du pays, les lois et la gestion de l'État."
+    ),
+    "sport": (
+        "Sport en République Démocratique du Congo: football, l'équipe nationale des Léopards, "
+        "Linafoot, clubs comme TP Mazembe ou AS V.Club. Résultats de matchs, transferts "
+        "de joueurs et compétitions sportives comme la CAN ou la CAF."
+    ),
+    "santé": (
+        "Santé et médecine en RDC: hôpitaux, médecins, traitement des maladies, vaccins, "
+        "épidémies de virus comme Ebola, Choléra ou Mpox. Prévention sanitaire et soins médicaux."
+    ),
+    "guerre": (
+        "Situation sécuritaire et guerre à l'est de la RDC: conflits armés, rebelles du M23, "
+        "milices ADF, terrorisme, opérations militaires des FARDC, massacres et insécurité. "
+        "Attaques, bombardements et mouvements de troupes dans le Kivu ou l'Ituri."
+    ),
+}
 
 THEME_KEYWORDS = {
     "politique": [
@@ -27,6 +50,27 @@ THEME_KEYWORDS = {
         "opposition",
         "président",
         "president",
+        "tshisekedi",
+        "fatshi",
+        "kabila",
+        "katumbi",
+        "fayulu",
+        "bemba",
+        "kamerhe",
+        "censurer",
+        "motion",
+        "loi",
+        "constitution",
+        "kinshasa",
+        "primature",
+        "député",
+        "depute",
+        "sénat",
+        "senat",
+        "scrutin",
+        "vote",
+        "cenit",
+        "ceni",
     ],
     "sport": [
         "sport",
@@ -39,6 +83,19 @@ THEME_KEYWORDS = {
         "joueur",
         "sélection",
         "selection",
+        "leopards",
+        "léopards",
+        "caf",
+        "fifa",
+        "stade",
+        "victoire",
+        "défaite",
+        "éliminatoires",
+        "v.club",
+        "mazembe",
+        "iman",
+        "daring",
+        "linafoot",
     ],
     "santé": [
         "santé",
@@ -51,6 +108,17 @@ THEME_KEYWORDS = {
         "vaccin",
         "épidémie",
         "epidemie",
+        "virus",
+        "ebola",
+        "choléra",
+        "cholera",
+        "mpox",
+        "variole",
+        "pharmacie",
+        "traitement",
+        "soins",
+        "clinique",
+        "oms",
     ],
     "guerre": [
         "guerre",
@@ -63,6 +131,19 @@ THEME_KEYWORDS = {
         "bombardement",
         "sécurité",
         "securite",
+        "m23",
+        "adf",
+        "fardc",
+        "monusco",
+        "combats",
+        "frontière",
+        "insécurité",
+        "insecurite",
+        "massacre",
+        "kivu",
+        "ituri",
+        "soldat",
+        "milice",
     ],
 }
 
@@ -227,8 +308,50 @@ class TopicGateService:
         self.dynamic_top_per_theme = int(os.getenv("TOPIC_GATE_DYNAMIC_TOP_PER_THEME", "25"))
         self.dynamic_min_frequency = int(os.getenv("TOPIC_GATE_DYNAMIC_MIN_FREQUENCY", "4"))
         self.dynamic_min_word_len = int(os.getenv("TOPIC_GATE_DYNAMIC_MIN_WORD_LEN", "4"))
+        self.semantic_threshold = float(os.getenv("TOPIC_GATE_SEMANTIC_THRESHOLD", "0.38"))
         self._dynamic_keywords_by_theme: dict[str, list[str]] = {theme: [] for theme in THEME_KEYWORDS}
         self._last_dynamic_refresh = 0.0
+        self.embedding_service = EmbeddingService()
+        self._anchor_embeddings: dict[str, list[float]] = {}
+
+    def _get_anchor_embeddings(self) -> dict[str, list[float]]:
+        if not self._anchor_embeddings:
+            for theme, anchor_text in THEME_ANCHORS.items():
+                self._anchor_embeddings[theme] = self.embedding_service.generate(anchor_text)
+        return self._anchor_embeddings
+
+    def _cosine_similarity(self, vec1: list[float], vec2: list[float]) -> float:
+        if len(vec1) != len(vec2):
+            return 0.0
+        # Les embeddings de SentenceTransformer sont déjà normalisés (normalize_embeddings=True)
+        # Donc la similarité cosinus est le produit scalaire.
+        return sum(a * b for a, b in zip(vec1, vec2))
+
+    def _semantic_classification(self, text: str) -> TopicDecision:
+        try:
+            query_emb = self.embedding_service.generate(text)
+            anchors = self._get_anchor_embeddings()
+            
+            best_theme = None
+            best_score = 0.0
+            
+            for theme, anchor_emb in anchors.items():
+                score = self._cosine_similarity(query_emb, anchor_emb)
+                if score > best_score:
+                    best_score = score
+                    best_theme = theme
+            
+            if best_theme and best_score >= self.semantic_threshold:
+                return TopicDecision(
+                    True, 
+                    best_theme, 
+                    best_score, 
+                    f"semantic_match:{best_theme}({best_score:.2f})"
+                )
+        except Exception as e:
+            logger.error("[TopicGate] Erreur classification sémantique: %s", e)
+            
+        return TopicDecision(False, None, 0.0, "no_semantic_match")
 
     def is_group_chat(self, chat_type: str | None) -> bool:
         return (chat_type or "").lower() in GROUP_CHAT_TYPES
@@ -275,10 +398,18 @@ class TopicGateService:
         if not cleaned_text:
             return TopicDecision(False, None, 0.0, "empty_text")
 
+        # 1. Vérification par mots-clés (Ultra-rapide)
         keyword_decision = self._keyword_fallback(cleaned_text, reason="keywords_first")
         if self.keyword_mode == "keywords-first" and keyword_decision.should_activate:
             return keyword_decision
 
+        # 2. Vérification sémantique par embeddings (Rapide ~7s)
+        # Permet de capturer des thèmes sans mots-clés exacts (ex: "Tshisekedi est-il mort ?")
+        semantic_decision = self._semantic_classification(cleaned_text)
+        if semantic_decision.should_activate:
+            return semantic_decision
+
+        # 3. Fallback IA générative (Lent sur CPU, > 30s-5m)
         prompt = (
             "Tu es un classifieur binaire très strict pour un bot de veille en RDC. "
             "Analyse le message et réponds uniquement avec un JSON valide, sans texte autour. "

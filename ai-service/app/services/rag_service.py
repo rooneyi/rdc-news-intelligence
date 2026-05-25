@@ -134,8 +134,8 @@ class RAGService:
             logger.error(f"Erreur critique dans le flux RAG: {e}")
             yield {"type": "error", "message": _format_rag_error(e)}
 
-    async def generate_full_answer(self, query: str, top_k: int = 5, channel: str = "web") -> str:
-        """Génère une réponse RAG complète en un seul bloc (pour les Webhooks)."""
+    async def generate_full_answer(self, query: str, top_k: int = 5, channel: str = "web") -> dict:
+        """Génère une réponse RAG complète et retourne le texte + les sources."""
         try:
             # Messagerie + web : même plafond d’articles (voir RAG_WEB_TOP_K).
             if channel in ["telegram", "whatsapp"]:
@@ -156,12 +156,21 @@ class RAGService:
             articles = self._filter_relevant_articles(articles, channel)
             articles = articles[:top_k]
             
+            sources = [{"id": a.id, "title": a.title, "url": a.link} for a in articles]
+
             if not articles:
                 logger.info("[RAGService] Aucun article trouvé. Message générique retourné.")
-                return f"❌ VÉRIFICATION : NON VÉRIFIABLE\n📝 EXPLICATION : Je n'ai trouvé aucune source locale (RDC News) concernant '{query}'."
+                return {
+                    "verdict": f"❌ VÉRIFICATION : NON VÉRIFIABLE\n📝 EXPLICATION : Je n'ai trouvé aucune source locale (RDC News) concernant '{query}'.",
+                    "sources": []
+                }
 
             # Pas de timeout : on attend la réponse complète de Mistral
-            return await self.llm_service.summarize_full(query, articles, channel=channel)
+            verdict = await self.llm_service.summarize_full(query, articles, channel=channel)
+            return {
+                "verdict": verdict,
+                "sources": sources
+            }
 
         except Exception as e:
             logger.error(f"Erreur critique dans le flux complet RAG: {e}")
@@ -172,4 +181,7 @@ class RAGService:
                     "`python scripts/check_db_connection.py`] "
                     + detail
                 )
-            return f"⚠️ Une erreur interne est survenue lors de l'analyse (Mistral indisponible : {detail})"
+            return {
+                "verdict": f"⚠️ Une erreur interne est survenue lors de l'analyse (Mistral indisponible : {detail})",
+                "sources": []
+            }

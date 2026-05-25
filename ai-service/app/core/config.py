@@ -59,3 +59,6 @@ if os.getenv("DATABASE_FROM_URL_ONLY", "").strip().lower() in {"1", "true", "yes
     )
 else:
     DATABASE_URL = _database_url_from_parts()
+
+# Redis Configuration
+REDIS_URL = _strip_env("REDIS_URL", "redis://localhost:6379/0")

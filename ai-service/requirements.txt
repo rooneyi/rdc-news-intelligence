@@ -18,6 +18,7 @@ python-multipart>=0.0.9,<1
 # HTTP & DB
 httpx>=0.27.0,<0.29.0
 psycopg2-binary>=2.9.9,<3
+redis>=5.0.0,<6
 
 # IA / vecteurs
 sentence-transformers>=3.0.0,<4
