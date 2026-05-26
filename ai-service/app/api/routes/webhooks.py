@@ -5,6 +5,8 @@ from fastapi import APIRouter, Request, BackgroundTasks, HTTPException, Response
 from app.services.rag_service import RAGService
 from app.services.ocr_service import OCRService
 from app.services.topic_gate_service import TopicGateService
+from app.services.embedding_service import EmbeddingService
+from app.services.memory_service import ConversationalMemoryService
 from app.services.whapi_cloud import (
     decode_whapi_data_uri_image,
     parse_whapi_payload,
@@ -15,7 +17,20 @@ from app.services.whapi_cloud import (
 import httpx
 import os
 import asyncio
+import redis.asyncio as redis
 from collections import deque
+from app.core.config import REDIS_URL
+
+# Redis pour la file d'attente (Orchestrateur) et la mémoire
+redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+WHAPI_QUEUE_KEY = "whapi_payload_queue"
+
+# Services
+ocr_service = OCRService()
+topic_gate_service = TopicGateService()
+embedding_service = EmbeddingService()
+memory_service = ConversationalMemoryService()
+rag_service = RAGService()
 
 # WhatsApp / Meta: ~4096 chars per text body; long URLs must not be split mid-link.
 _URL_IN_TEXT = re.compile(r"https?://[^\s]+", re.IGNORECASE)
@@ -173,7 +188,32 @@ async def process_telegram_message(chat_id: str, query: str):
 
     base_url = f"https://api.telegram.org/bot{bot_token}"
 
-    # 1. Envoi du message d'attente
+    # 1. Mémoire conversationnelle (Clustering / Redondance)
+    query_embedding = embedding_service.generate(query)
+    similar_context = await memory_service.search_similar(chat_id, query_embedding)
+    
+    if similar_context:
+        previous_verdict = similar_context.get("verdict")
+        prefix = "Cette information semble similaire à une publication déjà vérifiée récemment dans ce groupe.\n\n"
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{base_url}/sendMessage",
+                json={"chat_id": chat_id, "text": f"{prefix}{previous_verdict}"},
+            )
+        return
+
+    # 2. Topic Gate
+    decision = await topic_gate_service.classify(query)
+    if not decision.should_activate:
+        logger.info(
+            "[Telegram] Message ignoré (thème=%s, confiance=%.2f): %.80s",
+            decision.theme,
+            decision.confidence,
+            query,
+        )
+        return
+
+    # 3. Envoi du message d'attente
     message_id = None
     try:
         async with httpx.AsyncClient() as client:
@@ -187,8 +227,7 @@ async def process_telegram_message(chat_id: str, query: str):
                 return
             message_id = data["result"]["message_id"]
 
-            # 2. Traitement RAG IA en streaming
-            rag_service = RAGService()
+            # 4. Traitement RAG IA en streaming (pour la réactivité)
             text_buffer = ""
             sources_header = ""
 
@@ -241,6 +280,19 @@ async def process_telegram_message(chat_id: str, query: str):
                         error_message,
                     )
                     break
+            
+            # Sauvegarder en mémoire à la fin du flux
+            if text_buffer:
+                full_verdict = f"{sources_header}{text_buffer}"
+                # On extrait les sources du sources_header pour les stocker proprement? 
+                # On va juste stocker le verdict complet pour Telegram.
+                await memory_service.add_to_memory(
+                    chat_id=chat_id,
+                    query=query,
+                    embedding=query_embedding,
+                    verdict=full_verdict,
+                    sources=[] # Déjà formaté dans le verdict
+                )
 
     except Exception as e:
         logger.error(f"Erreur streaming Telegram: {e}")
@@ -589,21 +641,29 @@ def _whapi_queue_auth_ok(token_from_header: str) -> bool:
 
 
 async def _enqueue_whapi_payload(payload: dict) -> int:
-    async with _whapi_queue_lock:
-        _whapi_queue.append(payload)
-        return len(_whapi_queue)
+    try:
+        return await redis_client.rpush(WHAPI_QUEUE_KEY, json.dumps(payload))
+    except Exception as e:
+        logger.error(f"[Whapi Queue] Erreur enqueue: {e}")
+        # Fallback in-memory if Redis fails? (optional, but let's stick to Redis)
+        return 0
 
 
 async def _pop_whapi_payload() -> dict | None:
-    async with _whapi_queue_lock:
-        if not _whapi_queue:
-            return None
-        return _whapi_queue.popleft()
+    try:
+        raw = await redis_client.lpop(WHAPI_QUEUE_KEY)
+        if raw:
+            return json.loads(raw)
+    except Exception as e:
+        logger.error(f"[Whapi Queue] Erreur pop: {e}")
+    return None
 
 
 async def _get_whapi_queue_size() -> int:
-    async with _whapi_queue_lock:
-        return len(_whapi_queue)
+    try:
+        return await redis_client.llen(WHAPI_QUEUE_KEY)
+    except Exception:
+        return 0
 
 
 def _whapi_can_send_outbound() -> bool:
@@ -895,7 +955,48 @@ async def process_whatsapp_message(
             logger.error("Tokens WhatsApp manquants")
             return
 
+    await _whatsapp_mark_read_and_show_typing(wa_message_id)
+    if not wa_message_id and os.getenv("WHATSAPP_ACK_IF_NO_TYPING", "true").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
+        await _send_whatsapp_text(phone_number, "🔎 Analyse en cours…", transport=transport)
+
+    # 1. Mémoire conversationnelle (Clustering / Redondance)
+    # On génère l'embedding une fois pour toute la chaîne
+    query_embedding = embedding_service.generate(query)
+    
+    # On cherche si une question similaire a été posée récemment dans ce chat
+    # (chat_id = phone_number pour WhatsApp)
+    similar_context = await memory_service.search_similar(phone_number, query_embedding)
+    
+    if similar_context:
+        previous_verdict = similar_context.get("verdict")
+        previous_sources = similar_context.get("sources", [])
+        
+        prefix = "Cette information semble similaire à une publication déjà vérifiée récemment dans ce groupe.\n\n"
+        
+        sources_text = ""
+        if previous_sources:
+            lines = []
+            for i, s in enumerate(previous_sources, 1):
+                url = s.get("url") or "(lien indisponible)"
+                title = s.get("title") or "Source locale"
+                lines.append(f"[{i}] {title} - {url}")
+            sources_text = "\n🔗 SOURCES LOCALES :\n" + "\n".join(lines) + "\n"
+
+        await _send_whatsapp_text(
+            phone_number,
+            f"{prefix}{previous_verdict}{sources_text}",
+            transport=transport,
+        )
+        return
+
+    # 2. Topic Gate (Thématisation)
     if require_topic_gate:
+        # On pourrait passer l'embedding déjà généré à classify pour gagner du temps, 
+        # mais classify s'en charge déjà via embedding_service (lazy loading).
         decision = await topic_gate_service.classify(query)
         if not decision.should_activate:
             logger.info(
@@ -913,10 +1014,35 @@ async def process_whatsapp_message(
                 )
             return
 
+    # 3. Exécution RAG et stockage en mémoire
     try:
-        await _stream_whatsapp_response(phone_number, query, wa_message_id=wa_message_id, transport=transport)
+        # Pour stocker en mémoire, on a besoin du résultat complet.
+        rag_res = await rag_service.generate_full_answer(query, channel="whatsapp")
+        verdict = rag_res.get("verdict", "")
+        sources = rag_res.get("sources", [])
+        
+        # Envoyer la réponse (+ sources si absentes du texte brut)
+        body = (verdict or "").strip()
+        if sources and "SOURCES" not in body.upper():
+            lines = []
+            for i, source in enumerate(sources, 1):
+                title = source.get("title") or "Source locale"
+                url = source.get("url") or "(lien indisponible)"
+                lines.append(f"[{i}] {title} - {url}")
+            body = f"{body}\n\n🔗 SOURCES LOCALES :\n" + "\n".join(lines)
+        await _send_whatsapp_long_body(phone_number, body, transport=transport)
+
+        # Sauvegarder en mémoire pour les prochaines minutes
+        await memory_service.add_to_memory(
+            chat_id=phone_number,
+            query=query,
+            embedding=query_embedding,
+            verdict=verdict,
+            sources=sources
+        )
+
     except Exception as e:
-        logger.error(f"Erreur envoi WhatsApp: {e}")
+        logger.error(f"Erreur traitement WhatsApp: {e}")
 
 
 async def process_whatsapp_image(
@@ -955,6 +1081,8 @@ async def process_whatsapp_image(
         if not whatsapp_token or not phone_id:
             logger.error("Tokens WhatsApp manquants")
             return
+
+    await _whatsapp_mark_read_and_show_typing(wa_message_id)
 
     base_headers: dict[str, str] = {}
     if transport != "whapi":
@@ -1074,23 +1202,68 @@ async def process_whatsapp_image(
 
             logger.info("[WhatsApp] Texte OCR extrait (%s): %.80s…", phone_number, extracted_text)
 
+            # 1. Mémoire conversationnelle (Clustering / Redondance)
+            query_embedding = embedding_service.generate(combined_query)
+            similar_context = await memory_service.search_similar(phone_number, query_embedding)
+            
+            if similar_context:
+                previous_verdict = similar_context.get("verdict")
+                previous_sources = similar_context.get("sources", [])
+                prefix = "Cette image/information semble similaire à une publication déjà vérifiée récemment dans ce groupe.\n\n"
+                
+                sources_text = ""
+                if previous_sources:
+                    lines = []
+                    for i, s in enumerate(previous_sources, 1):
+                        url = s.get("url") or "(lien indisponible)"
+                        title = s.get("title") or "Source locale"
+                        lines.append(f"[{i}] {title} - {url}")
+                    sources_text = "\n🔗 SOURCES LOCALES :\n" + "\n".join(lines) + "\n"
+
+                await _send_whatsapp_text(
+                    phone_number,
+                    f"{prefix}{previous_verdict}{sources_text}",
+                    transport=transport,
+                )
+                return
+
+            # 2. Topic Gate
             if require_topic_gate:
                 decision = await topic_gate_service.classify(combined_query)
                 if not decision.should_activate:
                     logger.info(
-                        "[WhatsApp] Image ignorée (thème=%s, confiance=%.2f): %.80s",
+                        "[WhatsApp] Image ignoré (thème=%s, confiance=%.2f): %.80s",
                         decision.theme,
                         decision.confidence,
                         combined_query,
                     )
                     return
 
-            await _stream_whatsapp_response(
-                phone_number,
-                combined_query,
-                wa_message_id=wa_message_id,
-                transport=transport,
-            )
+            # 3. Exécution RAG et stockage
+            try:
+                rag_res = await rag_service.generate_full_answer(combined_query, channel="whatsapp")
+                verdict = rag_res.get("verdict", "")
+                sources = rag_res.get("sources", [])
+                
+                body = (verdict or "").strip()
+                if sources and "SOURCES" not in body.upper():
+                    lines = []
+                    for i, source in enumerate(sources, 1):
+                        title = source.get("title") or "Source locale"
+                        url = source.get("url") or "(lien indisponible)"
+                        lines.append(f"[{i}] {title} - {url}")
+                    body = f"{body}\n\n🔗 SOURCES LOCALES :\n" + "\n".join(lines)
+                await _send_whatsapp_long_body(phone_number, body, transport=transport)
+
+                await memory_service.add_to_memory(
+                    chat_id=phone_number,
+                    query=combined_query,
+                    embedding=query_embedding,
+                    verdict=verdict,
+                    sources=sources
+                )
+            except Exception as e:
+                logger.error(f"Erreur RAG image WhatsApp: {e}")
 
     except Exception as e:  # noqa: BLE001
         logger.exception("Erreur traitement image WhatsApp: %s", e)

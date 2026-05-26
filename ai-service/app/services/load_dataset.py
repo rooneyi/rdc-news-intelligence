@@ -37,9 +37,13 @@ def load_and_insert(
         logger.info(f"Starting dataset load: {dataset_name}")
         dataset = load_dataset(dataset_name)
 
-        # Utiliser le service d'embedding pour cohérence
+        # Utiliser les services pour cohérence
         from app.services.embedding_service import EmbeddingService
+        from app.services.vector_store_service import VectorStoreService
+        from app.schemas.article import ArticleOut
+        
         embedding_service = EmbeddingService(model_name=model_name)
+        vector_store_service = VectorStoreService()
 
         logger.info(f"Using embedding model: {model_name}")
 
@@ -54,15 +58,27 @@ def load_and_insert(
                 continue
 
             embedding = embedding_service.generate(content)
+            
+            # Insertion Postgres (metadata uniquement)
             cursor.execute(
-                "INSERT INTO articles (title, content, embedding) VALUES (%s, %s, %s)",
-                (title, content, embedding)
+                "INSERT INTO articles (title, content) VALUES (%s, %s) RETURNING id",
+                (title, content)
             )
+            row = cursor.fetchone()
+            article_id = row[0]
             inserted += 1
+
+            # Sync ChromaDB (Source de vérité pour la recherche vectorielle)
+            article_out = ArticleOut(
+                id=article_id,
+                title=title,
+                content=content
+            )
+            vector_store_service.add_articles([article_out], [embedding])
 
             if inserted % commit_every == 0:
                 conn.commit()
-                logger.info(f"Committed {inserted} rows so far")
+                logger.info(f"Committed {inserted} rows so far (Sync with ChromaDB)")
 
         conn.commit()
         logger.info(f"Completed dataset import. Total inserted: {inserted}")

@@ -16,8 +16,12 @@ from pydantic import BaseModel
 from typing import Optional, List
 import os
 
+from app.services.vector_store_service import VectorStoreService
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+vector_store_service = VectorStoreService()
 
 _SOURCES_JSON = Path(__file__).resolve().parents[3] / "data" / "crawler" / "sources.json"
 
@@ -239,8 +243,8 @@ def admin_overview():
         cur.execute("SELECT COUNT(*) FROM articles")
         total_articles = int(cur.fetchone()[0] or 0)
 
-        cur.execute("SELECT COUNT(*) FROM articles WHERE embedding IS NOT NULL")
-        embedded_articles = int(cur.fetchone()[0] or 0)
+        # On compte les articles dans ChromaDB plutôt que Postgres
+        embedded_articles = vector_store_service.collection.count()
 
         cur.execute("SELECT COUNT(DISTINCT COALESCE(source_id, 'unknown')) FROM articles")
         total_sources = int(cur.fetchone()[0] or 0)

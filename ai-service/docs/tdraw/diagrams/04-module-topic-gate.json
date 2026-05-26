@@ -1,0 +1,21 @@
+{
+  "title": "Module 4 — Topic Gate (filtrage thématique groupes)",
+  "nodes": [
+    { "id": "in", "group": "Entrée", "label": "Texte utilisateur\n(groupe WhatsApp)", "color": "green" },
+    { "id": "kw", "group": "Étape 1", "label": "Mots-clés dynamiques\n(Postgres → thèmes)", "color": "blue" },
+    { "id": "match", "group": "Étape 1", "label": "Match heuristique\npolitique/sport/santé/guerre", "color": "blue" },
+    { "id": "ollama", "group": "Étape 2", "label": "Ollama / Mistral\nclassify (si besoin)", "color": "violet" },
+    { "id": "seuil", "group": "Décision", "label": "Seuil confiance\nshould_activate", "color": "red" },
+    { "id": "rag", "group": "Sortie", "label": "→ Pipeline RAG", "color": "green" },
+    { "id": "skip", "group": "Sortie", "label": "Ignorer\n(silence ou msg info)", "color": "grey" }
+  ],
+  "edges": [
+    { "from": "in", "to": "kw", "label": "" },
+    { "from": "kw", "to": "match", "label": "" },
+    { "from": "match", "to": "ollama", "label": "ambigu" },
+    { "from": "match", "to": "seuil", "label": "score" },
+    { "from": "ollama", "to": "seuil", "label": "" },
+    { "from": "seuil", "to": "rag", "label": "OUI" },
+    { "from": "seuil", "to": "skip", "label": "NON" }
+  ]
+}

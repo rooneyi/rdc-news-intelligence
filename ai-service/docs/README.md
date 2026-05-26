@@ -5,7 +5,7 @@ Ce service constitue le cerveau du projet. Il gère la vectorisation des article
 ## 🛠 Fonctionnalités Clés
 
 1. **Recherche Sémantique (RAG)** : 
-   - Utilise une base de données **pgvector** pour trouver les articles les plus proches de vos questions.
+   - Utilise une base de données **ChromaDB** pour trouver les articles les plus proches de vos questions.
    - Génère des réponses factuelles via **Mistral-7B** (Ollama).
 2. **Traitement d'Images (OCR)** : 
    - Extrait le texte des images/affiches pour vérifier leur contenu.
@@ -118,3 +118,40 @@ WHATSAPP_REPLY_RELAY_URL=http://127.0.0.1:8000/webhooks/whatsapp/reply-relay
 ```
 
 Pour **`https://…/health`** en JSON : configure le reverse proxy (vhost) avec une règle qui envoie `/health` et `/webhooks/` vers `http://127.0.0.1:8000`, ou teste en SSH avec `curl http://127.0.0.1:8000/health`.
+
+## Documentation mémoire / TFC
+
+| Chapitre | Fichier |
+|----------|---------|
+| II — Architecture et flux | [`docs/README_CHAPITRE_2.md`](docs/README_CHAPITRE_2.md) |
+| III — Modélisation | [`docs/Chapitre_3_Modelisation.md`](docs/Chapitre_3_Modelisation.md) |
+| IV — Déploiement | [`docs/Chapitre_4_Deploiement.md`](docs/Chapitre_4_Deploiement.md) |
+| **Article — Résultats & discussion** | [`docs/Article_Resultats_et_Discussion.md`](docs/Article_Resultats_et_Discussion.md) |
+| **Audit sources swahili** | [`docs/SOURCES_SWAHILI_AUDIT.md`](docs/SOURCES_SWAHILI_AUDIT.md) |
+
+### Résumé Word (synthèse courte, langage clair)
+
+**Fichier à envoyer :** [`docs/pdf/Resume_Resultats_RDC_News.docx`](pdf/Resume_Resultats_RDC_News.docx) (~3–4 pages)
+
+```bash
+cd ai-service/docs
+pandoc Resume_Resultats_RDC_News.docx.md -o pdf/Resume_Resultats_RDC_News.docx
+```
+
+### Export PDF (détail technique)
+
+```bash
+cd ai-service/docs/pdf && ./export-pdf.sh
+# Rééquilibrer le catalogue (retirer sources vides, taguer EN) :
+python scripts/rebalance_sources_catalog.py
+```
+
+Fichiers générés dans [`docs/pdf/`](pdf/) :
+
+| PDF | Contenu |
+|-----|---------|
+| `Resultats_Corpus_Multilingue.pdf` | Résultats + corpus EN/SW (document combiné) |
+| `Article_Resultats_et_Discussion.pdf` | Résultats et discussion |
+| `SOURCES_SWAHILI_AUDIT.pdf` | Corpus anglais et swahili |
+| `Chapitre_3_Modelisation.pdf` | Chapitre III |
+| `Chapitre_4_Deploiement.pdf` | Chapitre IV |

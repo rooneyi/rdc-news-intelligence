@@ -43,12 +43,30 @@ class BackendForwarder:
             return None
         headers = {"Content-Type": "application/json"}
         # No Authorization header: backend does not require a token for crawler routes
-        return self._client.post(
+        resp = self._client.post(
             f"{self.endpoint.rstrip('/')}/crawler/articles",
             json=article.to_backend_payload(),
             headers=headers,
             timeout=20,
         )
+        if resp.status_code >= 400:
+            logger.warning(
+                "Ingest crawler refusé ou erreur HTTP %s — article non en BDD (url=%.120s) corps=%.200s",
+                resp.status_code,
+                article.link,
+                (resp.text or "").replace("\n", " "),
+            )
+        else:
+            try:
+                data = resp.json()
+            except ValueError:
+                data = {}
+            if isinstance(data, dict) and data.get("status") == "skipped":
+                logger.debug(
+                    "Ingest crawler ignoré (doublon) url=%.120s",
+                    article.link,
+                )
+        return resp
 
     def close(self):
         if self._client:

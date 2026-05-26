@@ -17,10 +17,6 @@ def init_database():
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # Créer l'extension pgvector si elle n'existe pas
-        cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-        logger.info("✓ Extension pgvector activée")
-
         # Créer la table articles
         cur.execute(CREATE_TABLE_SQL)
         logger.info("✓ Table articles créée (ou déjà existante)")

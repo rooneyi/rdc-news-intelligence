@@ -29,9 +29,6 @@ def reset_database() -> None:
         logger.info("Dropping table articles (if exists)…")
         cur.execute("DROP TABLE IF EXISTS articles;")
 
-        logger.info("Recreating pgvector extension (idempotent)…")
-        cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-
         logger.info("Recreating articles table…")
         cur.execute(CREATE_TABLE_SQL)
         cur.execute(MIGRATE_TABLE_SQL)

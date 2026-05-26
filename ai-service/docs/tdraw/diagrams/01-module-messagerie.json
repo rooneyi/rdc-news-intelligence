@@ -1,0 +1,19 @@
+{
+  "title": "Module 1 — Messagerie (entrée / sortie WhatsApp)",
+  "nodes": [
+    { "id": "user", "group": "Utilisateur", "label": "Utilisateur\n(groupe ou DM)", "color": "green" },
+    { "id": "wa", "group": "Utilisateur", "label": "Application WhatsApp", "color": "green" },
+    { "id": "whapi", "group": "Passerelle", "label": "Whapi.Cloud\nWebhook sortant", "color": "blue" },
+    { "id": "types", "group": "Types", "label": "Texte\nImage + légende", "color": "grey" },
+    { "id": "gate_ctx", "group": "Règles", "label": "Groupe → topic_gate\nDM → toujours actif", "color": "red" },
+    { "id": "out", "group": "Sortie", "label": "Bulles réponse\n(stream ou fin)", "color": "green" }
+  ],
+  "edges": [
+    { "from": "user", "to": "wa", "label": "envoie" },
+    { "from": "wa", "to": "whapi", "label": "événement" },
+    { "from": "types", "to": "wa", "label": "forme" },
+    { "from": "whapi", "to": "gate_ctx", "label": "parse payload" },
+    { "from": "gate_ctx", "to": "out", "label": "après traitement" },
+    { "from": "out", "to": "wa", "label": "affichage" }
+  ]
+}

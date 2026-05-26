@@ -1,0 +1,18 @@
+{
+  "title": "Module 7 — Restitution (relay → WhatsApp)",
+  "nodes": [
+    { "id": "rag", "group": "Local", "label": "Texte RAG\n(buffer stream)", "color": "violet" },
+    { "id": "chunk", "group": "Local", "label": "Découpage\nCHUNK_MAX 3800", "color": "grey" },
+    { "id": "relay_req", "group": "Local", "label": "POST WHAPI_\nREPLY_RELAY_URL", "color": "blue" },
+    { "id": "vps", "group": "VPS", "label": "/webhooks/whapi/\nreply-relay", "color": "orange" },
+    { "id": "whapi_api", "group": "VPS", "label": "gate.whapi.cloud\nmessages/text", "color": "blue" },
+    { "id": "wa", "group": "Utilisateur", "label": "WhatsApp\ndélivrance", "color": "green" }
+  ],
+  "edges": [
+    { "from": "rag", "to": "chunk", "label": "long?" },
+    { "from": "chunk", "to": "relay_req", "label": "JSON to+body" },
+    { "from": "relay_req", "to": "vps", "label": "HTTPS + token" },
+    { "from": "vps", "to": "whapi_api", "label": "WHAPI_TOKEN" },
+    { "from": "whapi_api", "to": "wa", "label": "⑥ Réponse" }
+  ]
+}

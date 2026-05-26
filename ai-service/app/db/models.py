@@ -1,4 +1,4 @@
-# Article table definition for PostgreSQL with pgvector
+# Article table definition for PostgreSQL (Metadata only, vectors are in ChromaDB)
 
 """
 Dimensions des embeddings selon les modèles:
@@ -19,14 +19,8 @@ CREATE TABLE IF NOT EXISTS articles (
     hash TEXT UNIQUE,
     categories TEXT[] DEFAULT '{}',
     image TEXT,
-    embedding VECTOR(384),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
--- Index pour recherche vectorielle (cosine similarity)
-CREATE INDEX IF NOT EXISTS articles_embedding_idx 
-ON articles USING ivfflat (embedding vector_cosine_ops) 
-WITH (lists = 100);
 
 CREATE TABLE IF NOT EXISTS training_runs (
     id SERIAL PRIMARY KEY,

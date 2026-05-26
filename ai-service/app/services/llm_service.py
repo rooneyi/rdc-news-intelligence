@@ -88,9 +88,10 @@ Articles de référence :
                             "stream": True,
                             "num_predict": max_tokens,
                             "options": {
-                                "temperature": 0.2,
+                                "temperature": 0.1,
                                 "num_ctx": self.num_ctx,
                                 "num_batch": self.num_batch,
+                                "num_thread": 4, # Optimisé pour 4 vCPUs
                             },
                         },
                     ) as response:
@@ -132,6 +133,89 @@ Articles de référence :
             response_text += chunk
         return response_text
 
-    def summarize(self, query: str, articles: List[ArticleOut]) -> str:
-        """Méthode de secours (évite le crash si appelée par erreur)"""
-        return "Erreur: Utilisez la méthode asynchrone summarize_stream ou summarize_full pour Mistral."
+    async def rerank(self, query: str, articles: List[ArticleOut]) -> List[ArticleOut]:
+        """Utilise Mistral pour ré-évaluer la pertinence des articles et les re-classer."""
+        if len(articles) <= 1:
+            return articles
+
+        # Préparation du prompt de re-ranking
+        articles_text = "\n".join(
+            "ID:"
+            + str(i)
+            + " | TITRE:"
+            + (a.title or "")
+            + " | CONTENU:"
+            + (a.content or "")[:200]
+            + "..."
+            for i, a in enumerate(articles)
+        )
+
+        # Pas de f-string sur le tout : les accolades du JSON d'exemple et celles des titres
+        # utilisateurs cassent sinon le parseur de formats Python.
+        q_lit = json.dumps(query, ensure_ascii=False)
+        prompt = (
+            "[INST] Tu es un assistant expert en pertinence de l'information.\n"
+            "Évalue la pertinence de chaque article ci-dessous par rapport à la question :\n"
+            + q_lit
+            + "\n\n"
+            "Pour chaque article, attribue un score de 0 à 10 (10 étant extrêmement pertinent, 0 hors sujet).\n"
+            "Réponds UNIQUEMENT sous forme d'un tableau JSON d'objets contenant l'ID et le SCORE.\n"
+            'Exemple de réponse : [{"id": 0, "score": 8}, {"id": 1, "score": 3}]\n\n'
+            "Articles à évaluer :\n"
+            + articles_text
+            + "\n[/INST]"
+        )
+
+        url = f"{self.host}/api/generate"
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    url,
+                    json={
+                        "model": self.model,
+                        "prompt": prompt,
+                        "stream": False,
+                        "options": {
+                            "temperature": 0.0,
+                            "num_thread": 4,  # Optimisé pour 4 vCPUs
+                        },
+                    },
+                )
+                if response.status_code == 200:
+                    result = response.json()
+                    text_response = result.get("response", "").strip()
+
+                    # Tentative d'extraction du JSON si Mistral a rajouté du texte
+                    try:
+                        start_idx = text_response.find("[")
+                        end_idx = text_response.rfind("]") + 1
+                        if start_idx != -1 and end_idx != -1:
+                            scores_data = json.loads(text_response[start_idx:end_idx])
+                            score_map: dict[int, float] = {}
+                            for item in scores_data:
+                                if not isinstance(item, dict):
+                                    continue
+                                try:
+                                    idx = int(item.get("id", -1))
+                                    score_map[idx] = float(item.get("score", 0))
+                                except (TypeError, ValueError):
+                                    continue
+                            for i, article in enumerate(articles):
+                                # On met à jour la similarité avec le score du re-ranking (normalisé sur 1.0)
+                                llm_score = score_map.get(i, 0.0) / 10.0
+                                # On combine avec la similarité cosinus (moyenne pondérée par exemple)
+                                article.similarity = (article.similarity or 0) * 0.3 + llm_score * 0.7
+
+                            # Tri par nouvelle similarité
+                            articles.sort(key=lambda x: x.similarity or 0, reverse=True)
+                            logger.info(f"[LLMService] Re-ranking terminé pour {len(articles)} articles")
+                    except Exception as e:
+                        logger.warning(
+                            f"[LLMService] Échec du parsing JSON re-ranking: {e}. "
+                            f"Texte: {text_response[:100]}"
+                        )
+        except Exception as e:
+            logger.error(f"[LLMService] Erreur lors du re-ranking: {e}")
+        
+        return articles
+

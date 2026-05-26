@@ -42,8 +42,8 @@ L'application est composée de **trois grandes couches** :
 │                    INFRASTRUCTURE                               │
 │                                                                 │
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────┐    │
-│  │ PostgreSQL   │  │ Mistral-7B   │  │     Crawler        │    │
-│  │ + pgvector   │  │  (Ollama)    │  │  (Radio Okapi…)    │    │
+│  │ PostgreSQL   │  │ Mistral-7B   │  │     ChromaDB       │    │
+│  │ (Métadonnées)│  │  (Ollama)    │  │ (Vecteurs/RAG)     │    │
 │  └──────────────┘  └──────────────┘  └────────────────────┘    │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -68,9 +68,9 @@ Un robot de collecte automatique (**Crawler**) parcourt en continu les sites d'i
 Chaque article collecté est transformé en un **vecteur mathématique** (embedding) grâce au modèle multilingue `paraphrase-multilingual-MiniLM-L12-v2`. Ce vecteur capture le **sens sémantique** du texte, pas juste les mots exacts.
 
 - **Modèle utilisé** : `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (384 dimensions)
-- **Stockage** : Colonne `embedding` de type `VECTOR(384)` dans PostgreSQL via l'extension `pgvector`
+- **Stockage** : Base vectorielle locale persistante **ChromaDB** (collection `articles_rdc`)
 
-> **Fichier source** : `app/services/embedding_service.py`
+> **Fichier source** : `app/services/vector_store_service.py`
 
 ### Étape 3 : Réception et classification du message
 
@@ -84,13 +84,14 @@ Quand un utilisateur envoie un message (texte ou image), le système :
 
 ### Étape 4 : Recherche Sémantique (Retrieval)
 
-La question de l'utilisateur est elle-même transformée en vecteur, puis comparée à tous les vecteurs d'articles de la base grâce à l'opérateur de **distance cosinus** (`<=>`) de pgvector. Les **5 articles les plus proches** sémantiquement sont extraits.
+La question de l'utilisateur est elle-même transformée en vecteur, puis comparée à tous les vecteurs d'articles de la base grâce à la **distance cosinus** calculée par **ChromaDB**. Les **5 articles les plus proches** sémantiquement sont extraits.
 
-```sql
-SELECT id, title, content, link
-FROM articles
-ORDER BY embedding <=> query_vector::vector
-LIMIT 5
+```python
+# Exemple de requête ChromaDB interne
+results = collection.query(
+    query_embeddings=[query_vector],
+    n_results=5
+)
 ```
 
 > **Fichier source** : `app/services/retrieval_service.py`
@@ -256,7 +257,7 @@ Les statuts éphémères constituent un vecteur majeur de désinformation en RDC
 | **Webhooks** | `app/api/routes/webhooks.py` | Réception des messages WhatsApp/Telegram |
 | **TopicGateService** | `app/services/topic_gate_service.py` | Classification thématique (garde du groupe) |
 | **EmbeddingService** | `app/services/embedding_service.py` | Vectorisation sémantique des textes |
-| **RetrievalService** | `app/services/retrieval_service.py` | Recherche vectorielle dans pgvector |
+| **RetrievalService** | `app/services/retrieval_service.py` | Recherche vectorielle dans ChromaDB |
 | **RAGService** | `app/services/rag_service.py` | Orchestration du pipeline Fact-Checking |
 | **LLMService** | `app/services/llm_service.py` | Génération de réponses via Mistral-7B |
 | **OCRService** | `app/services/ocr_service.py` | Extraction de texte depuis les images |
@@ -306,7 +307,7 @@ Les statuts éphémères constituent un vecteur majeur de désinformation en RDC
 | Composant | Technologie | Rôle |
 |---|---|---|
 | **Backend API** | FastAPI (Python) | Serveur asynchrone haute performance |
-| **Base de données** | PostgreSQL + pgvector | Stockage relationnel + recherche vectorielle |
+| **Base de données** | PostgreSQL + ChromaDB | Stockage relationnel + recherche vectorielle |
 | **Modèle IA local** | Mistral-7B via Ollama | Génération de réponses (fact-checking) |
 | **Embeddings** | SentenceTransformers (MiniLM) | Vectorisation multilingue des textes |
 | **OCR** | Tesseract | Extraction de texte depuis les images |

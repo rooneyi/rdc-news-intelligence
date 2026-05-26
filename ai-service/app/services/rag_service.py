@@ -40,6 +40,11 @@ class RAGService:
         self.llm_service = LLMService()
         self.min_similarity_default = float(os.getenv("RAG_MIN_SIMILARITY", "0.36"))
         self.min_similarity_messaging = float(os.getenv("RAG_MIN_SIMILARITY_MSG", "0.40"))
+        self.enable_rerank = os.getenv("RAG_ENABLE_RERANK", "true").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
 
     def _filter_relevant_articles(self, articles: list, channel: str) -> list:
         # Web : même seuil que messagerie pour des sources aussi pertinentes que WhatsApp/Telegram.
@@ -82,10 +87,24 @@ class RAGService:
                     int(os.getenv("RAG_WEB_TOP_K", os.getenv("WHATSAPP_TOP_K", "3"))),
                 )
 
-            # 1. Recherche des articles (Très rapide)
+            # 1. Recherche des articles (Très rapide via ChromaDB)
+            # On récupère plus de candidats pour le re-ranking (ex: 3x top_k)
+            search_limit = effective_top_k * 3
             query_embedding = self.embedding_service.generate(query)
-            articles = self.retrieval_service.search(query_embedding, limit=effective_top_k)
+            articles = self.retrieval_service.search(query_embedding, limit=search_limit)
+            
+            # 2. Re-ranking sémantique via l'LLM (désactivable : RAG_ENABLE_RERANK=false)
+            if self.enable_rerank and len(articles) > 1:
+                logger.info(
+                    "[RAGService] Re-ranking sémantique pour %s candidats",
+                    len(articles),
+                )
+                articles = await self.llm_service.rerank(query, articles)
+            
+            # 3. Filtrage par pertinence
             articles = self._filter_relevant_articles(articles, channel)
+            # On ne garde que les top_k finaux après re-ranking
+            articles = articles[:effective_top_k]
 
             if not articles:
                 logger.info("[RAGService] Aucun article suffisamment pertinent pour la requête.")
@@ -99,14 +118,13 @@ class RAGService:
                 yield {"type": "done"}
                 return
 
-            # 2. Envoyer les sources tout de suite pour montrer que le RAG travaille
+            # 4. Envoyer les sources tout de suite pour montrer que le RAG travaille
             sources = [{"id": a.id, "title": a.title, "url": a.link} for a in articles]
-            logger.info(f"[RAGService] Envoi des sources: {sources}")
+            logger.info(f"[RAGService] Envoi des sources ({len(sources)}): {sources}")
             yield {"type": "sources", "sources": sources}
 
-            # 3. Streamer Mistral mot par mot
+            # 5. Streamer Mistral mot par mot
             async for chunk in self.llm_service.summarize_stream(query, articles, channel=channel):
-                logger.info(f"[RAGService] Chunk généré: {chunk[:60]}...")
                 yield {"type": "summary_chunk", "text": chunk}
 
             logger.info("[RAGService] Fin du flux RAG (done)")
@@ -116,8 +134,8 @@ class RAGService:
             logger.error(f"Erreur critique dans le flux RAG: {e}")
             yield {"type": "error", "message": _format_rag_error(e)}
 
-    async def generate_full_answer(self, query: str, top_k: int = 5, channel: str = "web") -> str:
-        """Génère une réponse RAG complète en un seul bloc (pour les Webhooks)."""
+    async def generate_full_answer(self, query: str, top_k: int = 5, channel: str = "web") -> dict:
+        """Génère une réponse RAG complète et retourne le texte + les sources."""
         try:
             # Messagerie + web : même plafond d’articles (voir RAG_WEB_TOP_K).
             if channel in ["telegram", "whatsapp"]:
@@ -129,16 +147,30 @@ class RAGService:
                 )
 
             query_embedding = self.embedding_service.generate(query)
-            articles = self.retrieval_service.search(query_embedding, limit=top_k)
-            articles = self._filter_relevant_articles(articles, channel)
+            # On récupère plus de candidats pour le re-ranking
+            articles = self.retrieval_service.search(query_embedding, limit=top_k * 3)
             
+            if self.enable_rerank and len(articles) > 1:
+                articles = await self.llm_service.rerank(query, articles)
+
+            articles = self._filter_relevant_articles(articles, channel)
+            articles = articles[:top_k]
+            
+            sources = [{"id": a.id, "title": a.title, "url": a.link} for a in articles]
+
             if not articles:
                 logger.info("[RAGService] Aucun article trouvé. Message générique retourné.")
-                return f"❌ VÉRIFICATION : NON VÉRIFIABLE\n📝 EXPLICATION : Je n'ai trouvé aucune source locale (RDC News) concernant '{query}'."
+                return {
+                    "verdict": f"❌ VÉRIFICATION : NON VÉRIFIABLE\n📝 EXPLICATION : Je n'ai trouvé aucune source locale (RDC News) concernant '{query}'.",
+                    "sources": []
+                }
 
-            # Pas de timeout : on attend la réponse complète de Mistral,
-            # utile pour les canaux où on préfère la qualité à tout prix.
-            return await self.llm_service.summarize_full(query, articles, channel=channel)
+            # Pas de timeout : on attend la réponse complète de Mistral
+            verdict = await self.llm_service.summarize_full(query, articles, channel=channel)
+            return {
+                "verdict": verdict,
+                "sources": sources
+            }
 
         except Exception as e:
             logger.error(f"Erreur critique dans le flux complet RAG: {e}")
@@ -149,4 +181,7 @@ class RAGService:
                     "`python scripts/check_db_connection.py`] "
                     + detail
                 )
-            return f"⚠️ Une erreur interne est survenue lors de l'analyse (Mistral indisponible : {detail})"
+            return {
+                "verdict": f"⚠️ Une erreur interne est survenue lors de l'analyse (Mistral indisponible : {detail})",
+                "sources": []
+            }

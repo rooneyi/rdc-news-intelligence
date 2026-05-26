@@ -1,0 +1,20 @@
+{
+  "title": "Module 3 — Pont local (polling + dispatch)",
+  "nodes": [
+    { "id": "startup", "group": "Démarrage", "label": "ENABLE_WHAPI_\nQUEUE_POLLING=true", "color": "violet" },
+    { "id": "worker", "group": "Worker", "label": "run_whapi_queue_\npolling()", "color": "violet" },
+    { "id": "http", "group": "Worker", "label": "POST POP_URL\n+ X-RDC-Queue-Token", "color": "blue" },
+    { "id": "item", "group": "Worker", "label": "item JSON\nou vide", "color": "grey" },
+    { "id": "dispatch", "group": "Traitement", "label": "_dispatch_whapi_\npayload()", "color": "black" },
+    { "id": "parse", "group": "Traitement", "label": "parse_whapi_\npayload()", "color": "black" },
+    { "id": "proc", "group": "Traitement", "label": "process_whatsapp_\nmessage / image", "color": "green" }
+  ],
+  "edges": [
+    { "from": "startup", "to": "worker", "label": "asyncio task" },
+    { "from": "worker", "to": "http", "label": "boucle 2s" },
+    { "from": "http", "to": "item", "label": "réponse VPS" },
+    { "from": "item", "to": "dispatch", "label": "si item" },
+    { "from": "dispatch", "to": "parse", "label": "" },
+    { "from": "parse", "to": "proc", "label": "texte/image" }
+  ]
+}

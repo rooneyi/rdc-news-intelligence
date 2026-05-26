@@ -1,0 +1,21 @@
+{
+  "title": "Module 5 — Corpus, crawler, ChromaDB (mémoire sémantique)",
+  "nodes": [
+    { "id": "sources", "group": "Collecte", "label": "sources.json\nmédias RDC", "color": "blue" },
+    { "id": "crawler", "group": "Collecte", "label": "Crawler sync\nHTML / WordPress", "color": "blue" },
+    { "id": "api_ingest", "group": "Collecte", "label": "POST /crawler/articles\n→ Postgres", "color": "orange" },
+    { "id": "pg", "group": "Stockage", "label": "PostgreSQL\nmétadonnées articles", "color": "grey" },
+    { "id": "emb", "group": "Vectorisation", "label": "EmbeddingService\nMiniLM 384d", "color": "violet" },
+    { "id": "chroma", "group": "Stockage", "label": "ChromaDB\narticles_rdc", "color": "green" },
+    { "id": "reembed", "group": "Maintenance", "label": "train_pipeline\nsync_to_chroma", "color": "yellow" }
+  ],
+  "edges": [
+    { "from": "sources", "to": "crawler", "label": "config" },
+    { "from": "crawler", "to": "api_ingest", "label": "articles" },
+    { "from": "api_ingest", "to": "pg", "label": "INSERT" },
+    { "from": "api_ingest", "to": "emb", "label": "contenu" },
+    { "from": "emb", "to": "chroma", "label": "upsert" },
+    { "from": "reembed", "to": "chroma", "label": "rafraîchir" },
+    { "from": "pg", "to": "reembed", "label": "relire texte" }
+  ]
+}

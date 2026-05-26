@@ -49,6 +49,67 @@ def _is_group_chat(chat_id: str) -> bool:
     return chat_id.endswith("@g.us")
 
 
+def _from_me_truthy(msg: dict[str, Any]) -> bool:
+    v = msg.get("from_me")
+    if v is True:
+        return True
+    if isinstance(v, str) and v.strip().lower() in {"true", "1", "yes", "on"}:
+        return True
+    return False
+
+
+def _http_media_link(blob: dict[str, Any]) -> str | None:
+    for k in ("link", "url", "media_url", "download_url"):
+        v = blob.get(k)
+        if isinstance(v, str) and v.strip().lower().startswith("http"):
+            return v.strip()
+    return None
+
+
+def _preview_data_uri(blob: dict[str, Any]) -> str | None:
+    prev = blob.get("preview")
+    if isinstance(prev, str) and prev.strip().startswith("data:image"):
+        return prev.strip()
+    return None
+
+
+def _iter_whapi_message_dicts(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """
+    Messages ``post`` (``messages``) et mises à jour ``patch`` (``messages_updates[].after_update``).
+    """
+    root = payload
+    if not isinstance(root.get("messages"), list) and isinstance(root.get("data"), dict):
+        root = root["data"]
+
+    collected: list[dict[str, Any]] = []
+    raw = root.get("messages")
+    if isinstance(raw, list):
+        for m in raw:
+            if isinstance(m, dict):
+                collected.append(m)
+
+    updates = root.get("messages_updates")
+    if isinstance(updates, list):
+        for upd in updates:
+            if not isinstance(upd, dict):
+                continue
+            after = upd.get("after_update")
+            if isinstance(after, dict) and after.get("type") and after.get("chat_id"):
+                collected.append(after)
+
+    # Même id : la dernière entrée gagne (ex. patch ``after_update`` avec ``link`` après un post preview).
+    by_id: dict[str, dict[str, Any]] = {}
+    anon_i = 0
+    for m in collected:
+        mid = m.get("id")
+        key = str(mid) if mid is not None else ""
+        if not key:
+            key = f"__anon_{anon_i}"
+            anon_i += 1
+        by_id[key] = m
+    return list(by_id.values())
+
+
 def _extract_text_and_media(
     msg: dict[str, Any],
 ) -> tuple[str | None, str | None, str | None, str | None]:
@@ -73,15 +134,17 @@ def _extract_text_and_media(
             text_out = (lp.get("body") or "").strip() or None
         return text_out, None, None, None
 
-    if mtype in {"image", "sticker", "video", "audio"}:
+    if mtype in {"image", "sticker", "video", "audio", "gif"}:
         blob = msg.get(mtype)
+        if not isinstance(blob, dict) and mtype == "gif":
+            blob = msg.get("GIF")
         if isinstance(blob, dict):
             caption = (blob.get("caption") or "").strip() or None
-            link = blob.get("link")
-            if isinstance(link, str) and link.startswith("http"):
+            link = _http_media_link(blob)
+            if link:
                 return None, link, caption, None
-            prev = blob.get("preview")
-            if isinstance(prev, str) and prev.startswith("data:image"):
+            prev = _preview_data_uri(blob)
+            if prev:
                 logger.info(
                     "[Whapi] Média type=%s : pas de lien HTTP — traitement via preview embarqué "
                     "(qualité réduite). Active « Auto Download » sur Whapi pour un lien pleine taille.",
@@ -89,9 +152,10 @@ def _extract_text_and_media(
                 )
                 return None, None, caption, prev
             logger.info(
-                "[Whapi] Média type=%s ignoré : pas de ``link`` HTTP ni ``preview`` data:image "
-                "(active « Auto Download » ou renvoie une capture).",
+                "[Whapi] Média type=%s ignoré : pas de lien HTTP ni preview data:image "
+                "(clés blob=%s — active « Auto Download » ou renvoie une capture).",
                 mtype,
+                sorted(blob.keys())[:20],
             )
         return None, None, caption, None
 
@@ -99,13 +163,20 @@ def _extract_text_and_media(
         doc = msg.get("document") or {}
         if isinstance(doc, dict):
             caption = (doc.get("caption") or "").strip() or None
-            link = doc.get("link")
+            link = _http_media_link(doc)
             mime = (doc.get("mime_type") or "").lower()
-            if isinstance(link, str) and link.startswith("http"):
+            if link:
                 if mime.startswith("image/"):
                     return None, link, caption, None
                 text_out = caption or f"[document:{doc.get('file_name') or 'fichier'}]"
                 return text_out, None, caption, None
+            prev = _preview_data_uri(doc)
+            if mime.startswith("image/") and prev:
+                logger.info(
+                    "[Whapi] Document image sans lien HTTP — traitement via preview (mime=%s).",
+                    mime,
+                )
+                return None, None, caption, prev
 
     return None, None, None, None
 
@@ -115,14 +186,14 @@ def parse_whapi_payload(payload: dict[str, Any]) -> list[WhapiInbound]:
     Transforme le JSON Whapi en liste de messages à traiter (ignore from_me, statuts).
     """
     out: list[WhapiInbound] = []
-    raw_messages = payload.get("messages")
-    if not isinstance(raw_messages, list):
+    raw_messages = _iter_whapi_message_dicts(payload)
+    if not raw_messages:
         return out
 
     for msg in raw_messages:
         if not isinstance(msg, dict):
             continue
-        if msg.get("from_me") is True:
+        if _from_me_truthy(msg):
             continue
 
         chat_id = str(msg.get("chat_id") or "").strip()
@@ -179,6 +250,12 @@ def parse_whapi_payload(payload: dict[str, Any]) -> list[WhapiInbound]:
                 )
             )
             continue
+
+        logger.info(
+            "[Whapi] Message ignoré pour RAG type=%r chat_id=%s",
+            msg.get("type"),
+            chat_id[:60] + ("…" if len(chat_id) > 60 else ""),
+        )
 
     return out
 

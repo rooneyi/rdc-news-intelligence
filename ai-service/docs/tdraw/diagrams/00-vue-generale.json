@@ -1,0 +1,30 @@
+{
+  "title": "RDC News Intelligence — Vue générale (schéma manuscrit rdc news.jpeg)",
+  "nodes": [
+    { "id": "wa", "group": "1. Messagerie", "label": "WhatsApp\nGroupe ou classique", "color": "green" },
+    { "id": "msg", "group": "1. Messagerie", "label": "① Message\nTexte ou image", "color": "green" },
+    { "id": "whapi", "group": "1. Messagerie", "label": "Whapi.Cloud\n(passerelle)", "color": "green" },
+    { "id": "webhook", "group": "2. Serveur en ligne", "label": "② Envoi en ligne\nPOST /webhooks/whapi", "color": "orange" },
+    { "id": "queue", "group": "2. Serveur en ligne", "label": "③ File d'attente\n(proxy_only)", "color": "orange" },
+    { "id": "poll", "group": "3. Machine locale", "label": "④ Polling\nqueue/pop (~2 s)", "color": "violet" },
+    { "id": "topic", "group": "3. Machine locale", "label": "Vérifier thématique\n(Mistral + mots-clés)", "color": "violet" },
+    { "id": "chroma", "group": "3. Machine locale", "label": "Articles proches\nChromaDB (vecteurs)", "color": "violet" },
+    { "id": "verdict", "group": "3. Machine locale", "label": "⑤ Traiter\nVrai / Faux / Imprécis", "color": "violet" },
+    { "id": "relay", "group": "2. Serveur en ligne", "label": "reply-relay\n→ API Whapi", "color": "orange" },
+    { "id": "reply", "group": "1. Messagerie", "label": "⑥ Réponse\nsur WhatsApp", "color": "green" }
+  ],
+  "edges": [
+    { "from": "msg", "to": "wa", "label": "" },
+    { "from": "wa", "to": "whapi", "label": "" },
+    { "from": "whapi", "to": "webhook", "label": "HTTPS" },
+    { "from": "webhook", "to": "queue", "label": "enqueue" },
+    { "from": "poll", "to": "queue", "label": "demande" },
+    { "from": "queue", "to": "poll", "label": "payload" },
+    { "from": "poll", "to": "topic", "label": "" },
+    { "from": "topic", "to": "chroma", "label": "si OK" },
+    { "from": "chroma", "to": "verdict", "label": "RAG + Mistral" },
+    { "from": "verdict", "to": "relay", "label": "⑤" },
+    { "from": "relay", "to": "reply", "label": "⑥" },
+    { "from": "reply", "to": "wa", "label": "" }
+  ]
+}
