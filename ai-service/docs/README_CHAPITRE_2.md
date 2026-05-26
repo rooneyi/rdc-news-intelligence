@@ -1343,6 +1343,10 @@ Le chapitre suivant (modélisation UML, cas d’utilisation, diagrammes de séqu
 | [`FLUX_WHATSAPP_VERS_DRAWIO.md`](FLUX_WHATSAPP_VERS_DRAWIO.md) | Flux WhatsApp détaillé (texte) |
 | [`BROUILLON_ANTI_SURINFORMATION_WHATSAPP.md`](BROUILLON_ANTI_SURINFORMATION_WHATSAPP.md) | Pistes anti-submersion |
 | [`Chapitre_2_Redaction.md`](Chapitre_2_Redaction.md) | Brouillon académique données / méthodologie |
+| [**`Chapitre_3_Modelisation.md`**](Chapitre_3_Modelisation.md) | **Chapitre III — UML, cas d’utilisation, séquences** |
+| [**`Chapitre_4_Deploiement.md`**](Chapitre_4_Deploiement.md) | **Chapitre IV — VPS, stack, migration BDD** |
+| [**`Article_Resultats_et_Discussion.md`**](Article_Resultats_et_Discussion.md) | **Résultats, discussion (données mesurées)** |
+| [**`SOURCES_SWAHILI_AUDIT.md`**](SOURCES_SWAHILI_AUDIT.md) | **Audit + crawl sources kiswahili** |
 
 ---
 
