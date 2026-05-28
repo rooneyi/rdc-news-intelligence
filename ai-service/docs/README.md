@@ -126,6 +126,7 @@ Pour **`https://…/health`** en JSON : configure le reverse proxy (vhost) avec 
 | II — Architecture et flux | [`docs/README_CHAPITRE_2.md`](docs/README_CHAPITRE_2.md) |
 | III — Modélisation | [`docs/Chapitre_3_Modelisation.md`](docs/Chapitre_3_Modelisation.md) |
 | IV — Déploiement | [`docs/Chapitre_4_Deploiement.md`](docs/Chapitre_4_Deploiement.md) |
+| **Guide VPS pas à pas** | [`docs/DEPLOIEMENT_VPS_PAS_A_PAS.md`](docs/DEPLOIEMENT_VPS_PAS_A_PAS.md) |
 | **Article — Résultats & discussion** | [`docs/Article_Resultats_et_Discussion.md`](docs/Article_Resultats_et_Discussion.md) |
 | **Audit sources swahili** | [`docs/SOURCES_SWAHILI_AUDIT.md`](docs/SOURCES_SWAHILI_AUDIT.md) |
 
