@@ -1,0 +1,492 @@
+Infobesity and Fake News Mitigation on
+WhatsApp and Telegram: A Retrieval-Augmented
+Generation Approach
+Rooney Kalumba1 , Ferdinand Kahenga1,3 , Jonathan Bayongwa1 , and Jovita Mateus2,3
+1 Faculté des sciences informatiques, Université Don Bosco de Lubumbashi, Lubumbashi, DRC
+2 Department of Computer Science, Namibia University of Science and Technology, Windhoek, Namibia
+3 Department of Computer Science, University of the Western Cape, Cape Town, South Africa
+
+E-mail: 22ki129@esisalama.org, fkahenga@udbl.ac.cd, jbayongwa@udbl.ac.cd, mnyakukweni@gmail.com
+
+Abstract—Infobesity and fake news are two interconnected
+phenomena amplified by social media platforms, particularly
+WhatsApp and Telegram. This work proposes a flexible framework designed to mitigate both issues by enforcing the accuracy
+of responses, intelligently managing the fact-checking process
+and its outputs, and integrating automatic signaling to classify
+content. The framework also addresses the increasingly common
+practice of sharing images containing written comments by
+leveraging targeted crawling to build subject-related datasets,
+Optical Character Recognition (OCR) to extract information,
+content similarity scoring, and Retrieval-Augmented Generation. An initial testbed has been implemented in the Democratic
+Republic of the Congo context, processing over 13,000 articles.
+At this stage, French constitutes the majority of the corpus,
+with English and Swahili included in smaller proportions. Early
+results indicate that the framework has the potential to reduce
+both information overload and misinformation dissemination,
+while remaining adaptable to diverse sources and languages.
+Index Terms—Infobesity, Fake news, WhatsApp, Optical
+Character Recognition, Retrieval-Augmented Generation
+
+I. I NTRODUCTION
+The rapid global adoption of instant messaging services
+has profoundly transformed information ecosystems, introducing new modes of news sharing and dissemination. This
+shift has created a dual challenge: infobesity (information
+overload) and the viral spread of fake news (disinformation),
+interconnected phenomena further amplified by the pervasive
+influence of social media platforms [1]. Within closed and
+encrypted environments, these dynamics converge into a
+distinctive crisis for democratic discourse and public health.
+The meso-communication dimension of platforms such as
+WhatsApp and Telegram fosters large virtual groups where
+vast numbers of individuals exchange diverse content, amplifying both the risk of misinformation and the roots of
+infobesity.
+These challenges unfold across several dimensions:
+• Crisis of Truth in Messengerized Societies: Private,
+encrypted communication spaces blur the line between
+fact and fiction, intensifying the ”post-truth” paradigm.
+Platforms like WhatsApp bypass traditional gatekeeping, becoming central vectors for misinformation and
+threats to democratic stability [2]–[4].
+
+Theoretical Framework of Infobesity and Fatigue: Infobesity arises when data input exceeds cognitive capacity, often framed through health metaphors such as
+a weakened ”cognitive immune system.” This overload
+leads to social media fatigue, disengagement, and diminished critical evaluation [5]–[7].
+• WhatsApp and Hidden Virality: End-to-end encryption
+and group-based sharing foster “hidden virality,” where
+misinformation circulates within trusted networks before detection. This complicates established methods for
+combating misinformation [8]–[10].
+To mitigate misinformation on social media platforms, efforts have been made to develop monitoring tools (e.g., WhatsApp Monitor) [11] as well as automatic and semi-automatic
+fact-checking systems (such as helplines) [7]. External monitoring tools capture and sort messages based on popularity
+criteria within public groups. When combined with fake-ness
+scoring algorithms, these tools can rapidly identify widely
+disseminated false content, allowing fact-checkers to focus
+their attention on the most critical cases [10].
+The problems of the existing automatic solutions are: (1)
+excessive responses may contribute to information overload
+when fact-checking and its outputs are not intelligently
+managed, (2) information updates are often heavier and more
+complex than the misinformation spread itself, and (3) the
+context and environment of commonly used sources are
+region-based, which excludes certain region-specific misinformation and fails to account for languages used in countries
+such as the Democratic Republic of the Congo.
+In this work, we conceptualize infobesity and fake news
+as two distinct yet interconnected challenges that exploit the
+same communication channels. We propose a strategy to
+mitigate their impact through instant validation techniques.
+The major contribution of this study is the design of a
+new framework intended for integration into widely used
+social networking applications, specifically WhatsApp and
+Telegram. This framework directly addresses the dual challenge of infobesity and disinformation by accounting for the
+unique ways in which information circulates within groups
+and private conversations—namely, speed and volume.
+•
+
+The framework provides:
+1) The ability to scan and identify reliable information
+sources within a very short time interval;
+2) The ability to read WhatsApp messages selected by
+the user for verification, or to automatically process
+messages from public groups;
+3) The ability to define key thematic areas for verification
+and establish a scoring system to classify information;
+4) The ability to generate concise summaries with references (using RAG), while signaling whether a piece
+of information has already been processed within the
+same group or elsewhere;
+5) Flexibility to add context-specific sources that account
+for geographic and linguistic diversity.
+6) Possibility to connect to other existing tools and API.
+We argue that by enforcing the accuracy of responses provided by the framework, ensuring the intelligent management
+of the fact-checking process and its outputs (topic-related and
+relevance), and combining these with automatic signaling,
+group members and individual users will be able to quickly
+identify which information is accurate, novel, and useful,
+thereby enhancing their engagement with trustworthy content.
+II. R ELATED WORK
+This critical review synthesizes the current scientific literature regarding the nature of misinformation, its propagation
+mechanisms on messaging platforms, and the efficacy of
+proposed technical and social mitigation strategies, while
+identifying the existing gap in addressing the convergence
+of infobesity and structural mitigation.
+Current research emphasizes that technical detection must
+be paired with human-centric and structural interventions to
+effectively combat information overload and misinformation.
+
+B. Automated Dialogue and Fact Delivery
+1) Fact Bots: These automated accounts can be integrated
+into private ”meso-spaces” (like WhatsApp groups) to provide real-time verification [7]. However, audience reception
+is polarized; some users find them intrusive, while others
+see them as essential tools for ”educating others” in a safe
+environment.
+2) TRHF Framework: To neutralize the toxicity of internet trolls without provoking further conflict, the TRHF
+framework uses Large Language Models (LLMs) to generate
+rational, low-toxicity responses [14]. This aims to maintain
+healthy online discourse and prevent the spread of inflammatory disinformation.
+C. Integrated Social, Structural, and Platform Interventions
+Social and structural interventions emphasize the role of
+trusted community leaders in high power-distance contexts,
+who act as informal moderators to enforce group rules and
+disseminate verified information, thereby overcoming mistrust toward official sources [9]. Structural approaches, such
+as placing users in structured information-sharing networks,
+synchronize decision-making and reduce partisan bias, leading to greater agreement on content moderation and less emotional stress in evaluating controversial material [15]. At the
+platform level, behavioral strategies like conscious consumption habits, time reminders, and notification management
+help mitigate social media fatigue [6], while transparency
+measures—including anonymous reporting and ordered disclosure by platform owners—address the burden of hidden
+virality in encrypted apps [8]. Together, these interventions
+combine community gatekeeping, structural synchronization,
+behavioral design, and platform accountability to strengthen
+resilience against misinformation.
+D. Comparison of Proposed Mitigation Strategies
+
+A. Technical and Algorithmic Detection
+1) Prioritized Ranking (WhatsApp Monitor): To manage
+the ”deluge of information” that overwhelms human factcheckers, Reis et al. propose a ”fakeness score” model [10].
+This system uses the XGBoost machine learning algorithm
+to rank viral images based on their likelihood of being
+fabricated, allowing agencies to focus their limited resources
+on the most probable threats.
+2) Group-Level Bot Detection: As social bots evolve to
+mimic human behavior more closely, detection has shifted
+from individual profiling to ”group analysis” [12]. By using
+Graph Neural Networks (GNNs) and analyzing ”group-level
+features,” researchers can identify coordinated misinformation campaigns that exploit platform scale to fuel infobesity.
+3) Segmented Summarization: To address the cognitive
+load of ”long-document analysis” on social media, Wang
+et al. developed a pipeline that uses spectral dynamic segmentation and transformer models (BART) to create concise
+summaries [13]. This helps users rapidly grasp core themes
+without being buried under a ”deluge of data”.
+
+Table I summarizes the main mitigation strategies proposed
+in the literature for combating fake news and infobesity.
+TABLE I: Comparison of Proposed Mitigation Strategies
+Strategy Category
+Algorithmic Ranking
+Fact Bots
+
+Target
+Fake News
+
+Community
+Gatekeeping
+Segmented Summarization
+TRHF Framework
+
+Fake News
+
+Network Synchronization
+Behavioral Habits
+
+Fake News
+
+Infobesity
+Trolling/Fake
+News
+Partisan
+Bias
+Fatigue/ Infobesity
+
+Key Mechanism
+XGBoost ”fakeness scores” for prioritizing fact-checking effort.
+Automated delivery of factual data
+into private/meso-chat groups.
+Engaging trusted leaders for informal content moderation.
+Distilling high-volume documents
+into concise semantic chunks.
+LLM-generated rational responses
+to neutralize provocateurs.
+Structured peer networks to correct
+anchoring bias and reduce stress.
+”Conscious consumption” and using time-reminder notifications.
+
+Source
+[10]
+[7]
+[9]
+[13]
+[14]
+[15]
+[6]
+
+E. The identified Gap
+While existing work points to fact bots, their evaluation
+is often conducted in isolation, without considering that the
+
+Algorithm 1 Message Processing and Fact-Checking
+Pipeline
+1: A message is received from WhatsApp or Telegram via
+
+WHAPI/Webhook.
+2: The Orchestrator automatically places the message in a
+
+queue to prevent system overload.
+3: The Engine retrieves the message for processing.
+4: The text is cleaned, normalized, and prepared for seman-
+
+tic analysis.
+5: The system detects the language and extracts only the
+
+useful content.
+6: An embedding is generated from the text using an AI
+
+Fig. 1: Overview of the proposed Framework
+
+corrective information provided through bots might paradoxically contribute to infobesity. This study proposes a framework that inherently integrates both infobesity management
+and misinformation mitigation.
+III. M ETHODOLOGY
+The methodology developed in this work aims to balance
+privacy with the mitigation of disinformation and infobesity
+in closed social media platforms. The proposed framework
+seeks to rapidly detect and correct disinformation in a highspeed news dissemination environment using an internal
+database built from temporal scans of targeted and identified
+safe and trustworthy information sources while offering the
+potential to connect to other external existing fact-checking
+APIs. The core idea is twofold: (1) detect early to stop the
+spread of fake news, and (2) mark, group or flag responses to
+messages that have been shared multiple times within a group
+or across discussions, in order to avoid overloading users
+with repeated or similar verified or unrelevant information.
+Fig. 1 illustrates the high-level components of the proposed
+framework.
+It is a user-centric approach: each individual or group of
+individuals can decide how to interact with the platform by
+choosing either a private or group-based checking configuration at any time. This allows the system to collect messages
+from private or group discussions—either automatically or
+on demand—and submit them for verification. Once received
+by the Orchestrator, a message is placed in a waiting list to
+be processed by the Engine. The Engine performs several
+tasks, including determining whether the message or a similar
+one already exists, assessing its popularity, and evaluating its
+authenticity (truthfulness or falseness). The topic detection
+and the message relevance for further investigations are part
+of the work that the engine is doing.
+A. Algorithm
+Algorithm 1 illustrates the message processing and the
+fact-checking pipeline.
+
+model.
+system consults recent embeddings stored in a
+temporary conversational memory.
+8: A vector comparison is performed between the new
+message and previous group messages.
+9: The similarity is calculated to measure semantic closeness.
+10: if similarity score exceeds threshold then
+11:
+Messages are considered to discuss the same topic.
+12:
+Similar messages are grouped into a conversational
+cluster.
+13: end if
+14: The system checks if a response already exists for this
+cluster.
+15: if a similar response exists then
+16:
+The Engine avoids re-running the full RAG pipeline
+to save resources.
+17:
+The system reuses the previous response or generates
+a short contextual reply.
+18:
+The user is informed that the information is similar
+to one already analyzed.
+19:
+The system may also return the previous verdict and
+associated sources.
+20: else
+21:
+A new response is generated and stored.
+22: end if
+23: Redundant queries are ignored or logically merged without overloading the conversation.
+24: Only one main response remains visible in the group,
+reducing information overload and improving readability.
+7: The
+
+B. Component details
+This subsection provide detailed explanations of the
+Crawler Fig. 3 and main components of the framework as
+depicted in Fig. 2.
+1) Crawler: In a RAG-based disinformation detection
+architecture, the accuracy of responses depends on the freshness of the document base. To ensure reliable and continuously updated information, we implemented an automated
+crawler that feeds the knowledge base used by the semantic
+search engine and the fake news verification system. The
+crawler retrieves articles from selected news sites, maintaining a constantly refreshed source of truth.
+
+Fig. 2: Fact-checking and infobesity mitigation Framework.
+
+Fig. 3: The Crawler scans targeted and known information
+sources at short time intervals. The internal database is
+therefore considered up to date, enabling rapid fact-checking
+responses.
+
+Its first task is to define the sources to be exploited, such as
+RSS feeds, sitemaps, specific URLs, news platforms, blogs,
+and national or international media. The choice of sources
+is guided by criteria including language, country, category,
+credibility, update frequency, and contextual relevance.
+This selection ensures a diversified and reliable document
+base, adapted to the needs of the verification system. Fig.3
+illustrates the detailed information flow of the Crawler.
+Technically, the crawler ensures that all collected information is stored in a dual-layer memory system. On one side,
+it records structured metadata such as the title, date, source,
+author, URL, and cleaned content of each article. On the
+other side, it generates semantic embeddings from the text
+and stores them separately for similarity search and semantic
+retrieval.
+This dual storage design allows the system to maintain
+both a documentary memory (structured, reliable records of
+articles) and a semantic memory (vector representations for
+meaning and similarity). By continuously updating both layers, the crawler keeps the knowledge base fresh, relevant, and
+ready for rapid fact-checking and RAG-based verification.
+2) Orchestrator: The Orchestrator begins with user interactions through WhatsApp or Telegram groups, or private
+one-to-one conversations. When a user shares information,
+an image, a link, or a statement, the data is transmitted to the
+system via secure APIs. Messages are received through Webhooks connected to WhatsApp and Telegram, which handle
+incoming data, identify the sender and group, and temporarily
+store messages in a queue. This queue ensures efficient
+management of multiple simultaneous requests, while the
+engine retrieves messages periodically through secure polling
+
+for further analysis.
+3) Engine: The Engine is responsible for processing and
+analyzing incoming messages. After retrieval, it performs
+filtering to remove duplicates, repetitive content, and irrelevant data, thereby reducing information overload in group
+discussions. When similar content has already been analyzed,
+the system avoids re-running a full verification and instead
+reuses or summarizes existing responses.
+To handle multimedia, the Engine integrates OCR to detect text within images, screenshots, or manipulated posters,
+ensuring that visual content is included in the analysis. Extracted text then undergoes linguistic preprocessing, including cleaning, normalization, language detection, and named
+entity recognition, which improves semantic understanding.
+The system applies thematic and relevance analysis to
+determine the main topic and whether deeper verification
+is required. Core processing relies on a RAG architecture:
+messages are converted into embeddings, semantic search
+is performed in a vector database, and the most relevant
+documents are retrieved to provide context for response generation. A similarity threshold ensures that only sufficiently
+relevant sources are used; otherwise, the system returns
+messages such as “Information not verifiable” or “Insufficient
+sources.”
+Finally, the Engine generates a user-oriented response that
+may include a verdict on authenticity, a confidence level,
+contextual explanations, references, and recommendations.
+This enables the system to classify information as true, false,
+misleading, out of context, or unverifiable, while maintaining
+efficiency and reliability.
+IV. I MPLEMENTATION AND D ISCUSSION
+To evaluate our framework, we implemented a testbed
+to track fake news and infobesity on WhatsApp in the
+Democratic Republic of the Congo context, focusing on the
+southern region of Lubumbashi. French was the primary language targeted, with English and Swahili also included. The
+crawler scanned more than 13,000 articles, as summarized in
+Table II.
+Language
+French
+English
+Swahili
+
+Corpus Share
+∼94%
+∼5%
+∼1.3%
+
+Main Sources
+Radio Okapi, 7sur7, mediacongo, RFI,etc
+BBC, Guardian, VOA, DW (Africa/world feeds),etc
+VOA Swahili, BBC Swahili, DW Kiswahili, RFI Swahili,etc
+
+TABLE II: Language distribution and main sources of the
+corpus
+The system generates concise summaries and links drawn
+exclusively from verified sources, with message indicators
+classified as True, False, Imprecise, or Not Verifiable. It also
+detects whether a message has been repeatedly circulated
+within group discussions.
+Results show that, in the DRC context, disinformation
+can be mitigated through sourced and categorized responses,
+while information overload is reduced by filters and the
+avoidance of off-topic replies. The framework further enables
+multilingual support, with French already dominant, English
+
+progressing, and Swahili in its early stages. Future work will
+focus on enriching the Swahili corpus, accelerating response
+times, and conducting tests with real users to validate and
+refine the system.
+V. C ONCLUSION
+The proposed framework aims at combating both infobesity and fake news dissemination on social media platforms
+such as WhatsApp and Telegram. Its effectiveness relies on
+enforcing the accuracy of responses, ensuring the intelligent
+management of the fact-checking process and its outputs
+(topic-related and relevance), and combining these with automatic signaling. By doing so, group members and individual
+users are able to quickly identify which information is accurate, novel, and useful, thereby enhancing their engagement
+with trustworthy content.
+Designed to intelligently group, flag, and generate responses associated with reliable sources, the framework reduces both information overload and the spread of misinformation. The system demonstrates flexibility in integrating
+diverse sources and languages, making it adaptable to different geographic and linguistic contexts.
+Despite these benefits, further investigations are required
+to evaluate its performance in specific environments. We
+believe that deployment in real-world settings will provide
+deeper insights and opportunities to refine and improve the
+framework.
+R EFERENCES
+[1] G. P. Nobre, C. H. Ferreira, and J. M. Almeida, “A
+hierarchical network-oriented analysis of user participation in
+misinformation spread on whatsapp,” Information Processing
+Management, vol. 59, no. 1, p. 102757, 2022. [Online]. Available:
+https://www.sciencedirect.com/science/article/pii/S0306457321002387
+[2] E. Aı̈meur, S. Amri, and G. Brassard, “Fake news, disinformation and
+misinformation in social media: a review,” Social Network Analysis
+and Mining, vol. 13, no. 1, p. 30, Feb. 2023. [Online]. Available:
+https://doi.org/10.1007/s13278-023-01028-5
+[3] S. Boudana and E. Segev, “Fake News Makes the News: Definitions
+and Framing of Fake News in Mainstream Media,” Journalism
+Practice, vol. 20, no. 2, pp. 679–698, Feb. 2026. [Online]. Available:
+https://www.tandfonline.com/doi/full/10.1080/17512786.2024.2379898
+[4] H. Thakar and B. Bhatt, “Fake news detection: recent trends and
+challenges,” Social Network Analysis and Mining, vol. 14, no. 1, p.
+176, Aug. 2024. [Online]. Available: https://doi.org/10.1007/s13278024-01344-4
+[5] Y. M. Eadon and S. E. Wood, “Combating contamination and contagion: Embodied and environmental metaphors of misinformation,”
+Convergence: The International Journal of Research into New Media
+Technologies, vol. 31, no. 2, pp. 500–520, Apr. 2025. [Online]. Available: https://journals.sagepub.com/doi/10.1177/13548565241255347
+[6] F. Akbuğa, “Dealing with social media fatigue: A focused
+study on Gen Z,” Balıkesir Üniversitesi Sosyal Bilimler Enstitüsü
+Dergisi, vol. 28, no. 53, pp. 379–397, 2025. [Online]. Available:
+https://dergipark.org.tr/en/pub/baunsobed/issue/92372/1518611
+[7] L. Frischlich, J. Klapproth, S. Frank, M. Heckmann, S. E.
+Kunze, and T. Murgas, “Fighting Fakes on WhatsApp—Audience
+Perspectives on Fact Bots as Countermeasures,” Digital Journalism,
+vol. 12, no. 5, pp. 700–720, May 2024. [Online]. Available:
+https://www.tandfonline.com/doi/full/10.1080/21670811.2024.2341299
+[8] B. Paris and I. Pasquetto, “Hidden Virality and the Everyday Burden
+of Correcting WhatsApp Mis-and Disinformation,” Cambridge Studies
+on Governing Knowledge Commons, 2024. [Online]. Available:
+https://www.ideals.illinois.edu/items/126256
+
+[9] S. Coulibaly, “Exploring health misinformation on WhatsApp
+within the African migrant and refugee community in
+Southeast Queensland (SEQ),” Media International Australia,
+vol. 189, no. 1, pp. 8–23, Nov. 2023. [Online]. Available:
+https://doi.org/10.1177/1329878X231177836
+[10] J. C. S. Reis, P. Melo, F. Belém, F. Murai, J. M. Almeida, and
+F. Benevenuto, “Helping Fact-Checkers Identify Fake News Stories
+Shared through Images on WhatsApp,” Aug. 2023, arXiv:2308.14782
+[cs]. [Online]. Available: http://arxiv.org/abs/2308.14782
+[11] G. Resende, P. Melo, H. Sousa, J. Messias, M. Vasconcelos,
+J. Almeida, and F. Benevenuto, “(mis)information dissemination in
+whatsapp: Gathering, analyzing and countermeasures,” in Proceedings
+of the ACM Web Conference (WWW). ACM, 2019, pp. 818–828.
+[Online]. Available: https://doi.org/10.1145/3308558.3313688
+[12] Y. Liu, S. Xu, Y. Li, and S. Yu, “Evolution of
+Malicious Social Bot Detection: From Individual Profiling to
+Group Analysis and Beyond,” Journal of Social Computing,
+vol. 6, no. 3, pp. 258–284, Sep. 2025. [Online]. Available:
+https://www.sciopen.com/article/10.23919/JSC.2025.0017
+[13] G. Wang, P. Garg, and W. Wu, “Segmented Summarization
+and Refinement: A Pipeline for Long-Document Analysis
+on Social Media,” Journal of Social Computing, vol. 5,
+no. 2, pp. 132–144, Jun. 2024. [Online]. Available:
+https://ieeexplore.ieee.org/document/10613026/
+[14] X. Wang, Y. Gao, and L. Wang, “TRHF: A Study on Generating
+Responses to Internet Troll Comments Based on LLM,” Journal of
+Social Computing, vol. 7, no. 1, pp. 34–46, Mar. 2026. [Online].
+Available: https://www.sciopen.com/article/10.23919/JSC.2025.0027
+[15] D. Guilbeault and D. Centola, “Structural Synchronization in
+Classification of Controversial Content,” Journal of Social Computing,
+vol. 6, no. 4, pp. 287–299, Dec. 2025. [Online]. Available:
+https://www.sciopen.com/article/10.23919/JSC.2025.0024
+
+

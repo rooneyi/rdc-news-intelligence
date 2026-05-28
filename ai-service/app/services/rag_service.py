@@ -66,6 +66,146 @@ class RAGService:
         )
         return filtered
 
+    async def generate_viral_answer_stream(
+        self,
+        query: str,
+        old_query: str,
+        old_verdict: str,
+        group_count: int,
+        top_k: int = 5,
+        channel: str = "web",
+    ) -> AsyncGenerator[dict, None]:
+        """Génère une synthèse d'intelligence pour un sujet viral transverse."""
+        try:
+            effective_top_k = min(top_k, 5)
+            query_embedding = self.embedding_service.generate(query)
+            articles = self.retrieval_service.search(query_embedding, limit=effective_top_k * 2)
+            
+            if self.enable_rerank and len(articles) > 1:
+                articles = await self.llm_service.rerank(query, articles)
+            
+            articles = self._filter_relevant_articles(articles, channel)
+            articles = articles[:effective_top_k]
+
+            sources = [{"id": a.id, "title": a.title, "url": a.link} for a in articles]
+            if sources:
+                yield {"type": "sources", "sources": sources}
+
+            async for chunk in self.llm_service.summarize_viral_stream(query, old_query, old_verdict, articles, group_count, channel=channel):
+                yield {"type": "summary_chunk", "text": chunk}
+
+            yield {"type": "done"}
+        except Exception as e:
+            logger.error(f"Erreur generate_viral_answer_stream: {e}")
+            yield {"type": "error", "message": _format_rag_error(e)}
+
+    async def generate_refined_answer_stream(
+        self,
+        query: str,
+        old_query: str,
+        old_verdict: str,
+        top_k: int = 5,
+        channel: str = "web",
+    ) -> AsyncGenerator[dict, None]:
+        """Génère une réponse améliorée en streaming quand une question similaire existe."""
+        try:
+            effective_top_k = min(top_k, 3) if channel in {"telegram", "whatsapp"} else top_k
+            
+            query_embedding = self.embedding_service.generate(query)
+            articles = self.retrieval_service.search(query_embedding, limit=effective_top_k * 2)
+            
+            if self.enable_rerank and len(articles) > 1:
+                articles = await self.llm_service.rerank(query, articles)
+            
+            articles = self._filter_relevant_articles(articles, channel)
+            articles = articles[:effective_top_k]
+
+            sources = [{"id": a.id, "title": a.title, "url": a.link} for a in articles]
+            if sources:
+                yield {"type": "sources", "sources": sources}
+
+            async for chunk in self.llm_service.summarize_refined_stream(query, old_query, old_verdict, articles, channel=channel):
+                yield {"type": "summary_chunk", "text": chunk}
+
+            yield {"type": "done"}
+        except Exception as e:
+            logger.error(f"Erreur generate_refined_answer_stream: {e}")
+            yield {"type": "error", "message": _format_rag_error(e)}
+
+    async def generate_refined_full_answer(
+        self,
+        query: str,
+        old_query: str,
+        old_verdict: str,
+        top_k: int = 5,
+        channel: str = "web"
+    ) -> dict:
+        """Génère une réponse améliorée complète pour une question similaire."""
+        try:
+            effective_top_k = min(top_k, 3) if channel in {"telegram", "whatsapp"} else top_k
+            
+            query_embedding = self.embedding_service.generate(query)
+            articles = self.retrieval_service.search(query_embedding, limit=effective_top_k * 2)
+            
+            if self.enable_rerank and len(articles) > 1:
+                articles = await self.llm_service.rerank(query, articles)
+            
+            articles = self._filter_relevant_articles(articles, channel)
+            articles = articles[:effective_top_k]
+            
+            sources = [{"id": a.id, "title": a.title, "url": a.link} for a in articles]
+            
+            verdict = await self.llm_service.summarize_refined_full(query, old_query, old_verdict, articles, channel=channel)
+            return {
+                "verdict": verdict,
+                "sources": sources
+            }
+        except Exception as e:
+            logger.error(f"Erreur generate_refined_full_answer: {e}")
+            return {
+                "verdict": f"⚠️ Une erreur est survenue lors de l'amélioration de la réponse ({str(e)})",
+                "sources": []
+            }
+
+    async def generate_viral_full_answer(
+        self,
+        query: str,
+        old_query: str,
+        old_verdict: str,
+        group_count: int,
+        top_k: int = 5,
+        channel: str = "web"
+    ) -> dict:
+        """Génère une synthèse d'intelligence complète pour un sujet viral transverse."""
+        try:
+            effective_top_k = min(top_k, 5)
+            query_embedding = self.embedding_service.generate(query)
+            articles = self.retrieval_service.search(query_embedding, limit=effective_top_k * 2)
+            
+            if self.enable_rerank and len(articles) > 1:
+                articles = await self.llm_service.rerank(query, articles)
+            
+            articles = self._filter_relevant_articles(articles, channel)
+            articles = articles[:effective_top_k]
+            
+            sources = [{"id": a.id, "title": a.title, "url": a.link} for a in articles]
+            
+            # Utilisation de la nouvelle synthèse virale (non-streaming)
+            verdict = ""
+            async for chunk in self.llm_service.summarize_viral_stream(query, old_query, old_verdict, articles, group_count, channel=channel):
+                verdict += chunk
+                
+            return {
+                "verdict": verdict,
+                "sources": sources
+            }
+        except Exception as e:
+            logger.error(f"Erreur generate_viral_full_answer: {e}")
+            return {
+                "verdict": f"⚠️ Erreur lors de la synthèse virale: {str(e)}",
+                "sources": []
+            }
+
     async def generate_answer_stream(
         self,
         query: str,
