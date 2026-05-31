@@ -53,3 +53,23 @@ Ce fichier centralise toutes les sources citees dans le memoire avec une numerot
 [25] PM2, *PM2 Runtime Documentation*. [Online]. Available: https://pm2.keymetrics.io/docs/. Accessed: May 2026.
 
 [26] Nginx, *NGINX Documentation*. [Online]. Available: https://nginx.org/en/docs/. Accessed: May 2026.
+
+[27] GSMA, *The Mobile Economy Sub-Saharan Africa 2023*. London, U.K.: GSM Association, 2023.
+
+[28] P. Joshi, S. Santy, A. Budhiraja, K. Bali, and M. Choudhury, "The state and fate of linguistic diversity and inclusion in the NLP world," in *Proc. ACL 2020*, 2020.
+
+[29] B. Paris and I. Pasquetto, "Hidden Virality and the Everyday Burden of Correcting WhatsApp Mis-and Disinformation," in *Cambridge Studies on Governing Knowledge Commons*, 2024.
+
+[30] L. Frischlich, J. Klapproth, S. Frank, M. Heckmann, S. E. Kunze, and T. Murgas, "Fighting Fakes on WhatsApp—Audience Perspectives on Fact Bots as Countermeasures," *Digital Journalism*, vol. 12, no. 5, pp. 700-720, 2024.
+
+[31] G. P. Nobre, C. H. Ferreira, and J. M. Almeida, "A hierarchical network-oriented analysis of user participation in misinformation spread on WhatsApp," *Information Processing & Management*, vol. 59, no. 1, p. 102757, 2022.
+
+[32] E. Aimeur, S. Amri, and G. Brassard, "Fake news, disinformation and misinformation in social media: A review," *Social Network Analysis and Mining*, vol. 13, no. 1, p. 30, 2023.
+
+[33] J. C. S. Reis, P. Melo, F. Belem, F. Murai, J. M. Almeida, and F. Benevenuto, "Helping Fact-Checkers Identify Fake News Stories Shared through Images on WhatsApp," arXiv:2308.14782, 2023.
+
+[34] H. Thakar and B. Bhatt, "Fake news detection: Recent trends and challenges," *Social Network Analysis and Mining*, vol. 14, no. 1, p. 176, 2024.
+
+[35] X. Wang, Y. Gao, and L. Wang, "TRHF: A Study on Generating Responses to Internet Troll Comments Based on LLM," *Journal of Social Computing*, vol. 7, no. 1, pp. 34-46, 2026.
+
+[36] G. Wang, P. Garg, and W. Wu, "Segmented Summarization and Refinement: A Pipeline for Long-Document Analysis on Social Media," *Journal of Social Computing*, vol. 5, no. 2, pp. 132-144, 2024.
