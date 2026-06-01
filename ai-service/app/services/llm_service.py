@@ -126,6 +126,15 @@ Articles de référence :
 
         yield f"❌ Erreur Ollama: {last_error}"
 
+    async def summarize_full(
+        self, query: str, articles: List[ArticleOut], channel: str = "web"
+    ) -> str:
+        """Réponse RAG non streamée (WhatsApp / Telegram / endpoints sync)."""
+        parts: list[str] = []
+        async for chunk in self.summarize_stream(query, articles, channel):
+            parts.append(chunk)
+        return "".join(parts)
+
     def _build_refined_prompt(self, query: str, old_query: str, old_verdict: str, articles: List[ArticleOut], channel: str = "web") -> str:
         context = "\n".join([
             f"[{i+1}] {a.title}: {a.content[:300]} (Lien: {a.link})" for i, a in enumerate(articles)
