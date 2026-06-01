@@ -8,7 +8,8 @@ Ce chapitre presente la concretisation de l'architecture decrite precedemment. L
 2. les etapes d'implementation des modules critiques;
 3. la procedure de deploiement et d'exploitation;
 4. les resultats observes et leur interpretation;
-5. les limites techniques et les perspectives d'amelioration.
+5. les demonstrations visuelles (captures groupe, prive, admin);
+6. les limites techniques et les perspectives d'amelioration.
 
 Le chapitre adopte une logique de "preuve par l'execution": chaque choix est discute en fonction de son impact concret sur la fiabilite, la latence et la qualite de reponse.
 
@@ -208,6 +209,125 @@ La qualite percue est meilleure lorsque:
 
 Les cas non couverts sont retournes en mode prudent ("non verifiable" ou "imprecis"), ce qui limite les hallucinations assertives.
 
+### 4.6.5 Demonstrations conversationnelles — captures d'ecran
+
+Cette section reserve l'emplacement des figures illustrant le comportement du systeme en conditions reelles. Les captures proviennent du deploiement VPS (`rooney-rdc.rooneykalumba.tech`) et du bot connecte via Whapi (WhatsApp) et Telegram.
+
+Chaque figure doit montrer clairement : (i) le message utilisateur, (ii) la reponse du bot, (iii) lorsque pertinent le verdict, l'explication et les sources citees.
+
+---
+
+**Figure 4.1 — Verification en groupe WhatsApp : premiere question sur un sujet d'actualite**
+
+> *[Capture a inserer : conversation de groupe WhatsApp. Un membre envoie une question ou une rumeur (ex. sante, securite, politique). Le bot repond avec un verdict explicite, une explication concise et une liste de sources locales (Radio Okapi, Actualite.cd, etc.).]*
+
+Fichier suggere : `thesis/figures/fig_4_1_whatsapp_groupe_nouveau_sujet.png`
+
+Elements a faire apparaitre sur la capture :
+- nom du groupe ;
+- message entrant (texte ou capture d'article) ;
+- reponse structuree du bot (verdict + sources) ;
+- horodatage visible.
+
+---
+
+**Figure 4.2 — Verification en groupe WhatsApp : message redondant (anti-surinformation)**
+
+> *[Capture a inserer : le meme groupe envoie une formulation proche d'une rumeur deja traitee. Le bot ne repete pas une longue reponse : il affiche un rappel court du type « Cette information semble similaire a une publication deja verifiee… » avec renvoi au verdict ou aux sources precedentes.]*
+
+Fichier suggere : `thesis/figures/fig_4_2_whatsapp_groupe_redondance.png`
+
+Elements a commenter dans le corps du texte :
+- reduction du volume de messages par rapport a la Figure 4.1 ;
+- reutilisation de la memoire semantique (cluster conversationnel) ;
+- interet pour limiter l'infobesite dans un fil de groupe actif.
+
+---
+
+**Figure 4.3 — Verification en conversation individuelle (chat prive WhatsApp)**
+
+> *[Capture a inserer : echange en chat prive entre un utilisateur et le bot. L'utilisateur pose une question en langage naturel ; le bot retourne une synthese RAG avec sources, sans encombrer un groupe.]*
+
+Fichier suggere : `thesis/figures/fig_4_3_whatsapp_prive_question_reponse.png`
+
+Elements a faire apparaitre :
+- interface chat prive (un seul interlocuteur + bot) ;
+- question utilisateur claire ;
+- reponse avec verdict et liens ou titres de sources.
+
+---
+
+**Figure 4.4 — Verification en conversation individuelle : message image (OCR)**
+
+> *[Capture a inserer : l'utilisateur envoie une capture d'ecran ou une affiche contenant du texte. Le bot extrait le texte via OCR, lance la verification RAG et repond avec le meme format que pour un message texte.]*
+
+Fichier suggere : `thesis/figures/fig_4_4_whatsapp_prive_image_ocr.png`
+
+Optionnel : juxtaposer la **Figure 4.3** (texte) et la **Figure 4.4** (image) pour montrer la couverture multimodale.
+
+---
+
+**Figure 4.5 — Demonstration Telegram (groupe ou prive)**
+
+> *[Capture a inserer : echange equivalent sur Telegram (polling ou webhook), avec la meme logique de reponse structuree. Preciser en legende si le test est en groupe ou en message prive.]*
+
+Fichier suggere : `thesis/figures/fig_4_5_telegram_verification.png`
+
+---
+
+**Tableau 4.1 — Synthese des scenarios de demonstration**
+
+| Figure | Canal | Contexte | Comportement attendu |
+|--------|-------|----------|----------------------|
+| 4.1 | WhatsApp | Groupe | Pipeline RAG complet, sources citees |
+| 4.2 | WhatsApp | Groupe | Anti-redondance, reponse courte |
+| 4.3 | WhatsApp | Prive | Question / reponse individuelle |
+| 4.4 | WhatsApp | Prive | Image → OCR → RAG |
+| 4.5 | Telegram | Groupe ou prive | Meme chaine de verification |
+| 4.6 | Admin | Console web | Statistiques corpus et index |
+
+### 4.6.6 Tableau de bord administrateur — capture d'ecran
+
+Le systeme expose une console d'administration alimentee par l'endpoint `GET /admin/overview`. Elle permet de suivre l'etat du corpus documentaire et la coherence entre PostgreSQL et ChromaDB.
+
+Indicateurs affiches (API `/admin/overview`) :
+- **total_articles** : nombre d'articles en base PostgreSQL ;
+- **embedded_articles** : nombre de vecteurs dans la collection Chroma `articles_rdc` ;
+- **embedding_coverage** : pourcentage d'articles indexes ;
+- **total_sources** / **catalog_sources_configured** : diversite des medias ;
+- **top_sources** et **sources_breakdown** : repartition par `source_id` ;
+- **latest_articles** : derniers articles ingerees.
+
+---
+
+**Figure 4.6 — Vue d'ensemble du tableau de bord administrateur**
+
+> *[Capture a inserer : page Overview de la console admin (navigateur). Afficher les cartes ou tableaux de statistiques : total articles, articles embeddes, couverture vectorielle %, nombre de sources, graphique ou liste des principales sources, extrait des derniers articles.]*
+
+Fichier suggere : `thesis/figures/fig_4_6_admin_overview.png`
+
+URL de reference (deploiement) : `https://rooney-rdc.rooneykalumba.tech/admin` ou reponse JSON `http://127.0.0.1:8000/admin/overview` presentee dans une interface.
+
+---
+
+**Figure 4.7 — Detail des sources et couverture du corpus (admin)**
+
+> *[Capture a inserer : zoom sur la section « top sources » / « sources breakdown » ou liste des articles recents, montrant l'alignement Postgres–Chroma et la diversite des medias congolais (francais, anglais, swahili).]*
+
+Fichier suggere : `thesis/figures/fig_4_7_admin_sources_detail.png`
+
+---
+
+**Remarque methodologique (figures 4.1 a 4.7)**
+
+Lors de l'insertion des captures dans la version finale du memoire :
+- anonymiser numeros de telephone et noms de participants si necessaire ;
+- recadrer pour garder lisibles le message source et la reponse du bot ;
+- ajouter une legende sous chaque figure (canal, date du test, sujet traite) ;
+- referencer les figures dans le texte (ex. « comme le montre la Figure 4.2… »).
+
+Dossier de depot recommande : `thesis/figures/` (PNG ou JPG, resolution minimale 1200 px de large pour impression).
+
 ## 4.7 Discussion critique
 
 ### 4.7.1 Forces de la solution
@@ -252,6 +372,8 @@ Ces evolutions visent a transformer le pilote en plateforme resilient a charge p
 ## 4.9 Conclusion partielle
 
 Ce chapitre a montre que la solution proposee n'est pas seulement conceptualisable, mais effectivement implementable et exploitable sur infrastructure VPS. L'architecture RAG locale, combinee aux mecanismes de memoire semantique et de gestion de flux, permet de traiter des cas reels de verification conversationnelle en limitant la surinformation produite par le systeme lui-meme.
+
+Les demonstrations illustrees par les Figures 4.1 a 4.7 (conversations de groupe, echanges prives, traitement OCR et tableau de bord admin) completent l'argumentation par des preuves visuelles du comportement en production.
 
 La trajectoire globale du memoire est ainsi complete:
 
