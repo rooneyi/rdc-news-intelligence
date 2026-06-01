@@ -1,34 +1,100 @@
 /**
- * PM2 — FastAPI (uvicorn), même service que la doc systemd `rdc-ai-service`.
+ * PM2 — FastAPI (uvicorn)
  *
- * Prérequis :
- * - Être dans le dossier `ai-service` (là où se trouvent `app/` et ce fichier).
- * - Virtualenv Python : le fichier choisit automatiquement le premier existant parmi
- *   `venv/`, `.venv/`, `.env/` (dans cet ordre). Sinon : `export RDC_AI_PYTHON=/chemin/vers/bin/python`
- * - Variables : `ai-service/.env` en priorité, sinon `.env_file` (voir `app/core/config.py`).
+ * Charge automatiquement les variables depuis :
+ *   1. `.env_file` (base)
+ *   2. `.env` (surcharge VPS — écrase les clés communes)
+ * Même logique que `app/core/config.py`.
  *
- * Commandes :
+ * Sur le VPS :
  *   cd .../ai-service
- *   pm2 start ecosystem.config.cjs
- *   pm2 save
- *   pm2 startup   # une fois, pour redémarrage au boot
+ *   ./scripts/pm2_reload_env.sh
  *
- * Logs PM2 : ./logs/pm2-ai-*.log (dossier logs/ créé si besoin par PM2)
- *
- * Nginx doit faire proxy_pass vers le même port que `APP_PORT` (défaut 8000).
+ * Ou manuellement :
+ *   source scripts/load_env_production.sh
+ *   pm2 restart ecosystem.config.cjs --update-env
  */
 const fs = require("fs");
 const path = require("path");
 
 const root = __dirname;
-const port = process.env.APP_PORT || "8000";
+
+function loadDotEnv(filePath) {
+  const out = {};
+  if (!fs.existsSync(filePath)) {
+    return out;
+  }
+  if (!fs.statSync(filePath).isFile()) {
+    return out;
+  }
+  const raw = fs.readFileSync(filePath, "utf8");
+  for (const line of raw.split(/\r?\n/)) {
+    let trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) {
+      continue;
+    }
+    const key = trimmed.slice(0, eq).trim();
+    let val = trimmed.slice(eq + 1).trim();
+    const hash = val.indexOf(" #");
+    if (hash !== -1) {
+      val = val.slice(0, hash).trim();
+    }
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1);
+    }
+    if (key) {
+      out[key] = val;
+    }
+  }
+  return out;
+}
+
+function loadMergedEnv(base) {
+  const fromEnvFile = loadDotEnv(path.join(base, ".env_file"));
+  const fromDotEnv = loadDotEnv(path.join(base, ".env"));
+
+  const fileOnlyRaw =
+    process.env.RDC_ENV_FILE_ONLY ||
+    fromDotEnv.RDC_ENV_FILE_ONLY ||
+    fromEnvFile.RDC_ENV_FILE_ONLY ||
+    "";
+  const fileOnly = ["1", "true", "yes", "on"].includes(
+    String(fileOnlyRaw).trim().toLowerCase(),
+  );
+
+  if (fileOnly) {
+    console.log("[ecosystem] Variables : .env_file uniquement (RDC_ENV_FILE_ONLY)");
+    return { ...fromEnvFile };
+  }
+
+  const merged = { ...fromEnvFile, ...fromDotEnv };
+  const sources = [];
+  if (Object.keys(fromEnvFile).length) sources.push(".env_file");
+  if (Object.keys(fromDotEnv).length) sources.push(".env");
+  console.log(
+    "[ecosystem] Variables chargées :",
+    sources.length ? sources.join(" + ") : "(aucun fichier)",
+    `— ${Object.keys(merged).length} clés`,
+  );
+  return merged;
+}
+
+const fileEnv = loadMergedEnv(root);
+const port = fileEnv.APP_PORT || process.env.APP_PORT || "8000";
 
 function resolvePythonBin(base) {
-  const explicit = process.env.RDC_AI_PYTHON;
+  const explicit = process.env.RDC_AI_PYTHON || fileEnv.RDC_AI_PYTHON;
   if (explicit && fs.existsSync(explicit)) {
     return explicit;
   }
-  const dirs = ["venv", ".venv", ".env"];
+  const dirs = ["venv", ".venv"];
   for (const d of dirs) {
     const candidate = path.join(base, d, "bin", "python");
     if (fs.existsSync(candidate)) {
@@ -36,7 +102,7 @@ function resolvePythonBin(base) {
     }
   }
   console.error(
-    "[ecosystem] Aucun Python trouvé dans venv/.venv/.env. Crée-en un :\n" +
+    "[ecosystem] Aucun Python dans venv/.venv. Crée :\n" +
       `  cd "${base}" && python3 -m venv venv && ./venv/bin/pip install -r requirements.txt`,
   );
   return path.join(base, "venv", "bin", "python");
@@ -59,6 +125,8 @@ module.exports = {
       max_memory_restart: "2G",
       env: {
         PYTHONUNBUFFERED: "1",
+        ...fileEnv,
+        APP_PORT: String(port),
       },
       error_file: path.join(root, "logs", "pm2-ai-error.log"),
       out_file: path.join(root, "logs", "pm2-ai-out.log"),
