@@ -50,7 +50,7 @@ function loadDotEnv(filePath) {
       val = val.slice(1, -1);
     }
     if (key) {
-      out[key] = val;
+      out[key] = val.replace(/\r$/, "");
     }
   }
   return out;

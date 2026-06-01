@@ -21,7 +21,7 @@ function loadDotEnv(filePath) {
     let v = t.slice(eq + 1).trim();
     const h = v.indexOf(' #');
     if (h !== -1) v = v.slice(0, h).trim();
-    if (k) out[k] = v;
+    if (k) out[k] = v.replace(/\r$/, '');
   }
   return out;
 }
@@ -68,3 +68,20 @@ echo "=== Lignes Whapi dans vos fichiers (grep) ==="
 grep -nE '^(ENABLE_WHAPI|WHAPI_)' .env_file 2>/dev/null || true
 echo "--- .env ---"
 grep -nE '^(ENABLE_WHAPI|WHAPI_)' .env 2>/dev/null || echo "(aucune ligne WHAPI dans .env)"
+
+echo ""
+echo "=== Lecture Python (app.core.config, comme uvicorn) ==="
+if [[ -x "${ROOT}/venv/bin/python" ]]; then
+  PY="${ROOT}/venv/bin/python"
+elif [[ -x "${ROOT}/.venv/bin/python" ]]; then
+  PY="${ROOT}/.venv/bin/python"
+else
+  PY="python3"
+fi
+"${PY}" -c "
+import app.core.config  # noqa: F401
+from app.core.config import env_bool
+import os
+print('  ENABLE_WHAPI_QUEUE_POLLING:', repr(os.getenv('ENABLE_WHAPI_QUEUE_POLLING')), '→', env_bool('ENABLE_WHAPI_QUEUE_POLLING'))
+print('  WHAPI_WEBHOOK_PROXY_ONLY:', repr(os.getenv('WHAPI_WEBHOOK_PROXY_ONLY')), '→', env_bool('WHAPI_WEBHOOK_PROXY_ONLY'))
+" 2>&1 || echo "(échec import Python — vérifier venv)"

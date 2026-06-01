@@ -169,6 +169,11 @@ def _log_whapi_delivery_hints() -> None:
         bool(pop_url),
         bool(relay),
     )
+    logger.info(
+        "[Startup][Whapi] getenv brut POLLING=%r PROXY=%r",
+        os.getenv("ENABLE_WHAPI_QUEUE_POLLING"),
+        os.getenv("WHAPI_WEBHOOK_PROXY_ONLY"),
+    )
     if pop_url:
         logger.info("[Startup][Whapi] WHAPI_QUEUE_POP_URL=%s", pop_url[:180])
     if relay:

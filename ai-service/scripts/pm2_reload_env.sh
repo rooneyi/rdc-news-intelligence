@@ -38,10 +38,21 @@ echo ""
 echo "=== Contrôle Whapi (fusion .env_file + .env) ==="
 "${ROOT}/scripts/check_env_whapi.sh" || true
 echo ""
-echo "Vérification API (attente démarrage 8s) :"
-sleep 8
+echo "Vérification API (jusqu'à 45s) :"
 PORT="$(node -e "console.log(require('./ecosystem.config.cjs').apps[0].env.APP_PORT||8000)")"
-curl -sf "http://127.0.0.1:${PORT}/health" && echo "" || echo "(health non joignable — voir: pm2 logs rdc-ai-service --lines 50)"
+health_ok=0
+for _ in 1 2 3 4 5 6 7 8 9; do
+  if curl -sf "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+    curl -sf "http://127.0.0.1:${PORT}/health" && echo ""
+    health_ok=1
+    break
+  fi
+  sleep 5
+done
+if [[ "${health_ok}" -eq 0 ]]; then
+  echo "(health non joignable après ~45s — voir ci-dessous)"
+  pm2 logs rdc-ai-service --lines 80 --nostream 2>/dev/null | tail -40 || true
+fi
 echo ""
-echo "Logs Whapi au démarrage (dernier boot) :"
-pm2 logs rdc-ai-service --lines 40 --nostream 2>/dev/null | grep -E 'Startup\]\[Whapi|Whapi Queue|Polling file Whapi' || true
+echo "Logs Whapi (40 dernières lignes contenant Whapi) :"
+pm2 logs rdc-ai-service --lines 120 --nostream 2>/dev/null | grep -E 'Startup\]\[Whapi|getenv brut|Polling file Whapi|Bootstrap FastAPI' || true
