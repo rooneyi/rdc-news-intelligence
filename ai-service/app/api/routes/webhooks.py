@@ -1366,7 +1366,9 @@ async def whapi_webhook(request: Request, background_tasks: BackgroundTasks):
         preview = preview[:1200] + "…"
     logger.info("[Whapi] Payload (aperçu): %s", preview)
 
-    proxy_only = os.getenv("WHAPI_WEBHOOK_PROXY_ONLY", "").lower() in {"1", "true", "yes"}
+    from app.core.config import env_bool
+
+    proxy_only = env_bool("WHAPI_WEBHOOK_PROXY_ONLY")
     if proxy_only:
         queue_size = await _enqueue_whapi_payload(payload)
         logger.info(

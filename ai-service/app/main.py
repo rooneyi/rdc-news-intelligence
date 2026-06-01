@@ -5,6 +5,7 @@ import os
 import time
 
 import app.core.config  # noqa: F401 — charge `.env_file` / `.env`
+from app.core.config import env_bool
 
 import asyncio
 from fastapi import FastAPI
@@ -120,8 +121,8 @@ app.state.bootstrap_error = None
 
 def _log_whatsapp_delivery_hints() -> None:
     """Meta n’atteint pas localhost ; mode proxy + file exige un worker de polling."""
-    proxy_only = os.getenv("WHATSAPP_WEBHOOK_PROXY_ONLY", "").strip().lower() in {"1", "true", "yes"}
-    queue_poll = os.getenv("ENABLE_WHATSAPP_QUEUE_POLLING", "").strip().lower() in {"1", "true", "yes"}
+    proxy_only = env_bool("WHATSAPP_WEBHOOK_PROXY_ONLY")
+    queue_poll = env_bool("ENABLE_WHATSAPP_QUEUE_POLLING")
     pop_url = os.getenv("WHATSAPP_QUEUE_POP_URL", "").strip()
     forward_url = os.getenv("WHATSAPP_FORWARD_URL", "").strip()
 
@@ -155,16 +156,8 @@ def _log_whatsapp_delivery_hints() -> None:
 
 def _log_whapi_delivery_hints() -> None:
     """Whapi n’atteint pas localhost ; proxy + file exige un worker de polling (comme Meta)."""
-    proxy_only = os.getenv("WHAPI_WEBHOOK_PROXY_ONLY", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-    }
-    queue_poll = os.getenv("ENABLE_WHAPI_QUEUE_POLLING", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-    }
+    proxy_only = env_bool("WHAPI_WEBHOOK_PROXY_ONLY")
+    queue_poll = env_bool("ENABLE_WHAPI_QUEUE_POLLING")
     pop_url = os.getenv("WHAPI_QUEUE_POP_URL", "").strip()
     relay = os.getenv("WHAPI_REPLY_RELAY_URL", "").strip()
 
@@ -230,20 +223,20 @@ def _bootstrap() -> None:
         _log_whatsapp_delivery_hints()
         _log_whapi_delivery_hints()
 
-        if os.getenv("ENABLE_CRON_JOBS", "").lower() in {"1", "true", "yes"}:
+        if env_bool("ENABLE_CRON_JOBS"):
             asyncio.create_task(start_cron_jobs())
 
-        if os.getenv("ENABLE_TELEGRAM_POLLING", "").lower() in {"1", "true", "yes"}:
+        if env_bool("ENABLE_TELEGRAM_POLLING"):
             asyncio.create_task(run_telegram_polling())
 
-        if os.getenv("ENABLE_WHATSAPP_QUEUE_POLLING", "").lower() in {"1", "true", "yes"}:
+        if env_bool("ENABLE_WHATSAPP_QUEUE_POLLING"):
             asyncio.create_task(run_whatsapp_queue_polling())
             logger.info(
                 "[Startup] Polling file WhatsApp actif → %s",
                 os.getenv("WHATSAPP_QUEUE_POP_URL", "(WHATSAPP_QUEUE_POP_URL non défini)"),
             )
 
-        if os.getenv("ENABLE_WHAPI_QUEUE_POLLING", "").lower() in {"1", "true", "yes"}:
+        if env_bool("ENABLE_WHAPI_QUEUE_POLLING"):
             asyncio.create_task(run_whapi_queue_polling())
             logger.info(
                 "[Startup] Polling file Whapi actif → %s",

@@ -29,7 +29,20 @@ def _strip_env(key: str, default: str = "") -> str:
     v = os.getenv(key)
     if v is None:
         return default
-    return v.strip()
+    return v.strip().strip("\r\n")
+
+
+def env_bool(key: str, default: bool = False) -> bool:
+    """Lit un booléen .env (true/false, 1/0) en tolérant espaces et fins de ligne Windows."""
+    raw = os.getenv(key)
+    if raw is None:
+        return default
+    v = raw.strip().lower().strip("\r\n")
+    if v in {"1", "true", "yes", "on"}:
+        return True
+    if v in {"0", "false", "no", "off", ""}:
+        return False
+    return default
 
 
 DB_HOST = _strip_env("DB_HOST", "localhost") or "localhost"
