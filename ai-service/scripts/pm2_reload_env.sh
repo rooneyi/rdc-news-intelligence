@@ -35,9 +35,13 @@ fi
 
 pm2 save
 echo ""
-echo "Vérification :"
-sleep 2
-curl -sf "http://127.0.0.1:${APP_PORT:-8000}/health" | head -c 200 || echo "(health non joignable)"
+echo "=== Contrôle Whapi (fusion .env_file + .env) ==="
+"${ROOT}/scripts/check_env_whapi.sh" || true
 echo ""
-echo "Logs Whapi au démarrage :"
-pm2 logs rdc-ai-service --lines 25 --nostream 2>/dev/null | grep -E 'Startup|Whapi|ecosystem' || true
+echo "Vérification API (attente démarrage 8s) :"
+sleep 8
+PORT="$(node -e "console.log(require('./ecosystem.config.cjs').apps[0].env.APP_PORT||8000)")"
+curl -sf "http://127.0.0.1:${PORT}/health" && echo "" || echo "(health non joignable — voir: pm2 logs rdc-ai-service --lines 50)"
+echo ""
+echo "Logs Whapi au démarrage (dernier boot) :"
+pm2 logs rdc-ai-service --lines 40 --nostream 2>/dev/null | grep -E 'Startup\]\[Whapi|Whapi Queue|Polling file Whapi' || true
