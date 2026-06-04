@@ -33,6 +33,19 @@ type AdminOverview = {
   latest_articles: Array<{ id: number; title: string; source: string; link: string }>;
 };
 
+type CrawlerJob = {
+  running: boolean;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  source_id: string;
+  limit: number;
+  run_reembedding: boolean;
+  crawl_exit_code: number | null;
+  message: string;
+  error: string | null;
+};
+
 export default function AdminPage() {
   const { appName, adminEmail } = useAdminBranding();
   const router = useRouter();
