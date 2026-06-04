@@ -82,7 +82,7 @@ export default function ClientPage() {
     setQuery("");
 
     const controller = new AbortController();
-    let idleAbortId: ReturnType<typeof setTimeout> | undefined;
+    let idleAbortId: number | undefined;
     const resetIdleAbort = () => {
       if (idleAbortId !== undefined) window.clearTimeout(idleAbortId);
       idleAbortId = window.setTimeout(() => controller.abort(), STREAM_IDLE_MS);
