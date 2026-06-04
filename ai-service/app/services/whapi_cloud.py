@@ -260,8 +260,92 @@ def parse_whapi_payload(payload: dict[str, Any]) -> list[WhapiInbound]:
     return out
 
 
+def whapi_auth_headers() -> dict[str, str]:
+    token = (os.getenv("WHAPI_TOKEN") or "").strip()
+    if not token:
+        return {}
+    return {"Authorization": f"Bearer {token}"}
+
+
 def whapi_config_ok() -> bool:
     return bool((os.getenv("WHAPI_TOKEN") or "").strip())
+
+
+def _looks_like_image_bytes(data: bytes, content_type: str = "") -> bool:
+    if len(data) < 64:
+        return False
+    ct = (content_type or "").lower()
+    if ct.startswith("image/"):
+        return True
+    if data[:3] == b"\xff\xd8\xff":
+        return True
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return True
+    if data[:4] == b"RIFF" and len(data) > 12 and data[8:12] == b"WEBP":
+        return True
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return True
+    return False
+
+
+async def download_whapi_media_bytes(
+    client: httpx.AsyncClient,
+    url: str,
+) -> tuple[bytes | None, str | None]:
+    """
+    Télécharge un média Whapi (lien ``link`` du webhook).
+    Retourne (octets, message_erreur_utilisateur).
+    """
+    clean = (url or "").strip()
+    if not clean.lower().startswith("http"):
+        return None, "URL média invalide."
+
+    use_auth = os.getenv("WHAPI_MEDIA_USE_AUTH", "true").lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+    headers = whapi_auth_headers() if use_auth else {}
+
+    try:
+        resp = await client.get(clean, headers=headers or None, follow_redirects=True)
+    except httpx.HTTPError as exc:
+        logger.error("[Whapi] Téléchargement média HTTP error: %s", exc)
+        return None, "Réseau indisponible pour télécharger l’image."
+
+    if resp.status_code >= 400 or not resp.content:
+        if headers:
+            try:
+                resp = await client.get(clean, follow_redirects=True)
+            except httpx.HTTPError as exc:
+                logger.error("[Whapi] Retry sans auth: %s", exc)
+                return None, "Impossible de télécharger l’image (lien expiré ou refusé)."
+        if resp.status_code >= 400 or not resp.content:
+            logger.error(
+                "[Whapi] Téléchargement refusé status=%s octets=%s url=%.80s",
+                resp.status_code,
+                len(resp.content or b""),
+                clean,
+            )
+            return None, (
+                "Impossible de télécharger l’image. Active « Auto Download » sur Whapi "
+                "ou renvoie la capture."
+            )
+
+    ct = resp.headers.get("content-type", "")
+    if not _looks_like_image_bytes(resp.content, ct):
+        logger.error(
+            "[Whapi] Réponse non-image (content-type=%s, octets=%s, début=%r)",
+            ct,
+            len(resp.content),
+            (resp.content or b"")[:80],
+        )
+        return None, (
+            "Le lien Whapi n’a pas renvoyé une image (token expiré ou Auto Download désactivé)."
+        )
+
+    return resp.content, None
 
 
 async def whapi_send_text(to_chat_id: str, body: str) -> None:

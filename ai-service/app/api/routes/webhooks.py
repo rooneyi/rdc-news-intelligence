@@ -14,12 +14,12 @@ from app.services.memory_service import (
     should_use_viral_global,
 )
 from app.services.whapi_cloud import (
-    decode_whapi_data_uri_image,
     parse_whapi_payload,
     whapi_config_ok,
     whapi_send_text,
     whapi_webhook_secret_expected,
 )
+from app.services.whatsapp_media import WhatsappImageLoadError, load_whatsapp_image_bytes
 import httpx
 import os
 import asyncio
@@ -1084,6 +1084,12 @@ async def process_whatsapp_image(
                 "[Whapi] Aucune image exploitable : pas de lien HTTP (Auto Download) "
                 "ni preview data:image dans le webhook."
             )
+            await _send_whatsapp_text(
+                phone_number,
+                "❌ Image reçue sans données téléchargeables. Active « Auto Download » sur Whapi "
+                "ou renvoie la capture avec une légende.",
+                transport=transport,
+            )
             return
     else:
         whatsapp_token, phone_id = _whatsapp_credentials()
@@ -1105,141 +1111,105 @@ async def process_whatsapp_image(
     media_timeout = float(os.getenv("WHATSAPP_MEDIA_TIMEOUT", "90"))
     ref = media_id or "whapi-url"
 
-    image_bytes_preview: bytes | None = None
-    if transport == "whapi" and media_inline_data_uri and not (
-        media_download_url and str(media_download_url).strip().startswith("http")
-    ):
-        image_bytes_preview = decode_whapi_data_uri_image(str(media_inline_data_uri).strip())
-        if not image_bytes_preview:
-            logger.error("[Whapi] Preview data:image illisible ou trop court.")
-            await _send_whatsapp_text(
-                phone_number,
-                "❌ Image reçue mais preview illisible. Active « Auto Download » sur Whapi ou renvoie l’image.",
-                transport=transport,
-            )
-            return
-        logger.info(
-            "[Whapi] Image depuis preview webhook (%s octets) — préfère Auto Download pour pleine taille.",
-            len(image_bytes_preview),
-        )
-
     try:
         async with httpx.AsyncClient(timeout=media_timeout) as client:
-            image_bytes: bytes
-
-            if image_bytes_preview is not None:
-                image_bytes = image_bytes_preview
-            elif media_download_url and transport == "whapi":
-                img_resp = await client.get(str(media_download_url).strip())
-                if img_resp.status_code >= 400 or not img_resp.content:
-                    logger.error(
-                        "[Whapi] Téléchargement image refusé (status=%s, octets=%s)",
-                        img_resp.status_code,
-                        len(img_resp.content or b""),
-                    )
-                    await _send_whatsapp_text(
-                        phone_number,
-                        "❌ Impossible de télécharger l’image (lien Whapi). Active « Auto Download » sur Whapi ou réessaie.",
-                        transport=transport,
-                    )
-                    return
-                image_bytes = img_resp.content
-            else:
-                # Meta Cloud API
-                meta_resp = await client.get(
-                    f"https://graph.facebook.com/v17.0/{media_id}", headers=base_headers
+            try:
+                image_bytes = await load_whatsapp_image_bytes(
+                    transport=transport,
+                    client=client,
+                    media_id=media_id,
+                    media_download_url=media_download_url,
+                    media_inline_data_uri=media_inline_data_uri,
+                    meta_auth_headers=base_headers,
                 )
-                meta_data = meta_resp.json()
-                if meta_resp.status_code >= 400:
-                    logger.error(
-                        "[WhatsApp] Meta média %s (status=%s): %s",
-                        media_id,
-                        meta_resp.status_code,
-                        meta_data,
-                    )
-                    await _send_whatsapp_text(
-                        phone_number,
-                        "❌ Impossible de télécharger l'image depuis WhatsApp (vérifie le token / les permissions média).",
-                        transport=transport,
-                    )
-                    return
-                media_url = meta_data.get("url")
-                if not media_url:
-                    logger.error("[WhatsApp] Impossible de récupérer l'URL du média: %s", meta_data)
-                    await _send_whatsapp_text(
-                        phone_number,
-                        "❌ Impossible d'accéder au fichier image via l'API Meta.",
-                        transport=transport,
-                    )
-                    return
-
-                img_resp = await client.get(media_url, headers=base_headers)
-                if img_resp.status_code >= 400 or not img_resp.content:
-                    logger.error(
-                        "[WhatsApp] Téléchargement binaire image refusé (status=%s, octets=%s)",
-                        img_resp.status_code,
-                        len(img_resp.content or b""),
-                    )
-                    await _send_whatsapp_text(
-                        phone_number,
-                        "❌ Meta n'a pas renvoyé le fichier image (réessaie : les liens média expirent vite).",
-                        transport=transport,
-                    )
-                    return
-
-                image_bytes = img_resp.content
+            except WhatsappImageLoadError as load_err:
+                logger.warning("[WhatsApp] Chargement image (%s): %s", ref, load_err)
+                await _send_whatsapp_text(
+                    phone_number,
+                    f"❌ {load_err.user_message}",
+                    transport=transport,
+                )
+                return
 
             try:
                 extracted_text = ocr_service.extract_text(image_bytes)
+            except ValueError as val_exc:
+                logger.warning("[WhatsApp] Image/OCR invalide (%s): %s", ref, val_exc)
+                await _send_whatsapp_text(
+                    phone_number,
+                    f"❌ {val_exc}",
+                    transport=transport,
+                )
+                return
+            except RuntimeError as rt_exc:
+                logger.error("[WhatsApp] Tesseract manquant (%s): %s", ref, rt_exc)
+                await _send_whatsapp_text(
+                    phone_number,
+                    "❌ OCR indisponible sur le serveur. Installe Tesseract "
+                    "(`sudo apt install tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng`) "
+                    "puis redémarre le service IA.",
+                    transport=transport,
+                )
+                return
             except Exception as ocr_exc:  # noqa: BLE001
                 logger.exception("[WhatsApp] Échec OCR (image ref=%s): %s", ref, ocr_exc)
                 await _send_whatsapp_text(
                     phone_number,
-                    "❌ Lecture OCR impossible. Sur la machine qui traite les images, installe Tesseract "
-                    "(ex. Debian/Ubuntu : "
-                    "`sudo apt install tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng`) "
-                    "et vérifie Python `pillow` + `pytesseract`.",
+                    "❌ Lecture OCR impossible sur cette image. Ajoute une légende avec ta question "
+                    "ou renvoie une capture plus nette.",
                     transport=transport,
                 )
                 return
 
             combined_query = _build_combined_message(caption, extracted_text)
             if not combined_query:
-                logger.info("[WhatsApp] Aucun texte exploitable extrait de l'image pour %s", phone_number)
+                logger.info(
+                    "[WhatsApp] Aucun texte exploitable (OCR vide) pour %s — légende=%r",
+                    phone_number,
+                    (caption or "")[:80],
+                )
                 await _send_whatsapp_text(
                     phone_number,
-                    "❌ Impossible d'extraire du texte de cette image. Ajoute une légende avec ta question, ou envoie une image avec du texte lisible.",
+                    "❌ Aucun texte lisible sur l’image. Écris ta question en légende sous la photo, "
+                    "ou envoie une capture avec du texte plus grand.",
                     transport=transport,
                 )
                 return
 
             logger.info("[WhatsApp] Texte OCR extrait (%s): %.80s…", phone_number, extracted_text)
 
-            query_embedding = embedding_service.generate(combined_query)
+            query_embedding = None
             if conversational_memory_enabled():
-                similar_context = await memory_service.search_similar(
-                    phone_number, query_embedding
-                )
-                if should_use_refined_local(similar_context):
-                    previous_verdict = similar_context.get("verdict")
-                    previous_sources = similar_context.get("sources", [])
-                    prefix = repeat_note_prefix() or ""
-                    sources_text = ""
-                    if previous_sources:
-                        lines = []
-                        for i, s in enumerate(previous_sources, 1):
-                            url = s.get("url") or "(lien indisponible)"
-                            title = s.get("title") or "Source locale"
-                            lines.append(f"[{i}] {title} - {url}")
-                        sources_text = "\n🔗 SOURCES LOCALES :\n" + "\n".join(lines) + "\n"
-                    await _send_whatsapp_text(
-                        phone_number,
-                        f"{prefix}{previous_verdict}{sources_text}",
-                        transport=transport,
+                try:
+                    query_embedding = embedding_service.generate(combined_query)
+                except Exception as emb_exc:  # noqa: BLE001
+                    logger.warning(
+                        "[WhatsApp] Embedding mémoire ignoré pour image: %s",
+                        emb_exc,
                     )
-                    return
+                if query_embedding is not None:
+                    similar_context = await memory_service.search_similar(
+                        phone_number, query_embedding
+                    )
+                    if should_use_refined_local(similar_context):
+                        previous_verdict = similar_context.get("verdict")
+                        previous_sources = similar_context.get("sources", [])
+                        prefix = repeat_note_prefix() or ""
+                        sources_text = ""
+                        if previous_sources:
+                            lines = []
+                            for i, s in enumerate(previous_sources, 1):
+                                url = s.get("url") or "(lien indisponible)"
+                                title = s.get("title") or "Source locale"
+                                lines.append(f"[{i}] {title} - {url}")
+                            sources_text = "\n🔗 SOURCES LOCALES :\n" + "\n".join(lines) + "\n"
+                        await _send_whatsapp_text(
+                            phone_number,
+                            f"{prefix}{previous_verdict}{sources_text}",
+                            transport=transport,
+                        )
+                        return
 
-            # Topic Gate
             if require_topic_gate:
                 decision = await topic_gate_service.classify(combined_query)
                 if not decision.should_activate:
@@ -1251,13 +1221,21 @@ async def process_whatsapp_image(
                     )
                     return
 
-            # 3. Exécution RAG et stockage
             try:
-                rag_res = await rag_service.generate_full_answer(combined_query, channel="whatsapp")
+                rag_res = await rag_service.generate_full_answer(
+                    combined_query, channel="whatsapp"
+                )
                 verdict = rag_res.get("verdict", "")
                 sources = rag_res.get("sources", [])
-                
+
                 body = (verdict or "").strip()
+                if not body:
+                    await _send_whatsapp_text(
+                        phone_number,
+                        "❌ L’IA n’a pas pu formuler de réponse pour cette image. Réessaie avec une légende explicite.",
+                        transport=transport,
+                    )
+                    return
                 if sources and "SOURCES" not in body.upper():
                     lines = []
                     for i, source in enumerate(sources, 1):
@@ -1267,7 +1245,7 @@ async def process_whatsapp_image(
                     body = f"{body}\n\n🔗 SOURCES LOCALES :\n" + "\n".join(lines)
                 await _send_whatsapp_long_body(phone_number, body, transport=transport)
 
-                if conversational_memory_enabled():
+                if conversational_memory_enabled() and query_embedding is not None:
                     await memory_service.add_to_memory(
                         chat_id=phone_number,
                         query=combined_query,
@@ -1275,15 +1253,27 @@ async def process_whatsapp_image(
                         verdict=verdict,
                         sources=sources,
                     )
-            except Exception as e:
-                logger.error(f"Erreur RAG image WhatsApp: {e}")
+            except Exception as rag_exc:  # noqa: BLE001
+                logger.exception("[WhatsApp] Erreur RAG image (%s): %s", ref, rag_exc)
+                await _send_whatsapp_text(
+                    phone_number,
+                    "❌ Erreur lors de l’analyse (IA surchargée ou indisponible). Réessaie dans 1–2 minutes.",
+                    transport=transport,
+                )
 
+    except httpx.HTTPError as http_exc:
+        logger.exception("[WhatsApp] Réseau image (%s): %s", ref, http_exc)
+        await _send_whatsapp_text(
+            phone_number,
+            "❌ Délai dépassé ou réseau indisponible pour l’image. Réessaie.",
+            transport=transport,
+        )
     except Exception as e:  # noqa: BLE001
-        logger.exception("Erreur traitement image WhatsApp: %s", e)
+        logger.exception("Erreur traitement image WhatsApp (%s): %s", ref, e)
         try:
             await _send_whatsapp_text(
                 phone_number,
-                "⚠️ Erreur technique lors du traitement de l'image. Réessaie dans un instant.",
+                "⚠️ Erreur inattendue sur l’image. Réessaie ou ajoute une légende avec ta question.",
                 transport=transport,
             )
         except Exception as send_err:  # noqa: BLE001
