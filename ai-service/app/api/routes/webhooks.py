@@ -943,13 +943,8 @@ async def process_whatsapp_message(
     # ... (vérifications transport existantes) ...
 
     await _whatsapp_mark_read_and_show_typing(wa_message_id)
-
-    if wa_message_id and not await memory_service.claim_inbound_message(
-        transport, wa_message_id
-    ):
-        return
-
-    # 1. Mémoire conversationnelle (Locale & Globale Transverse) — si CONVERSATIONAL_MEMORY_ENABLED
+    
+    # 1. Mémoire conversationnelle (Locale & Globale Transverse)
     query_embedding = embedding_service.generate(query)
     local_context = await memory_service.search_similar(phone_number, query_embedding)
     global_context = await memory_service.search_global_similar(query_embedding)
@@ -1082,11 +1077,6 @@ async def process_whatsapp_image(
             return
 
     await _whatsapp_mark_read_and_show_typing(wa_message_id)
-
-    if wa_message_id and not await memory_service.claim_inbound_message(
-        transport, wa_message_id
-    ):
-        return
 
     base_headers: dict[str, str] = {}
     if transport != "whapi":
