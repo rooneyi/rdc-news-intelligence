@@ -280,6 +280,15 @@ class CrawlerRunRequest(BaseModel):
     )
 
 
+@router.post("/admin/memory/flush", summary="Vider la mémoire conversationnelle Redis", tags=["Admin"])
+async def admin_memory_flush():
+    from app.services.memory_service import ConversationalMemoryService
+
+    svc = ConversationalMemoryService()
+    deleted = await svc.flush_all()
+    return {"status": "ok", "keys_deleted": deleted}
+
+
 @router.get("/admin/crawler/status", summary="État du dernier crawl admin", tags=["Admin"])
 def admin_crawler_status():
     return {"status": "ok", "job": get_crawler_job_state()}

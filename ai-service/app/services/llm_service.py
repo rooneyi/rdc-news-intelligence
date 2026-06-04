@@ -165,9 +165,9 @@ Articles de référence récents :
 {context}
 
 Ta tâche est de :
-1. Analyser si la nouvelle question apporte une nuance par rapport à la précédente.
-2. Améliorer la formulation ou la précision de la réponse précédente.
-3. Proposer une "meilleure solution" plus claire et plus directe.
+1. Traiter la nouvelle question comme une demande à part entière (RAG sur les articles fournis).
+2. Si la question apporte un angle nouveau, l’intégrer ; sinon confirmer ou préciser le verdict.
+3. Ne pas répéter mécaniquement « pas de nuance » : répondre de façon utile et concise.
 
 {format_instruction}
 [/INST]"""

@@ -30,6 +30,44 @@ def inbound_message_dedup_enabled() -> bool:
     }
 
 
+def memory_refine_min_occurrence() -> int:
+    """Nombre de fois qu’un sujet doit déjà avoir été traité avant le mode « raffiné »."""
+    return max(1, int(os.getenv("MEMORY_REFINE_MIN_OCCURRENCE", "2")))
+
+
+def memory_viral_min_groups() -> int:
+    """Alerte viralité seulement si le sujet a été vu dans au moins N chats distincts."""
+    return max(2, int(os.getenv("MEMORY_VIRAL_MIN_GROUPS", "3")))
+
+
+def memory_show_repeat_note() -> bool:
+    """Préfixe « Sujet déjà abordé » (désactivé par défaut)."""
+    return os.getenv("MEMORY_SHOW_REPEAT_NOTE", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def should_use_refined_local(local_context: Optional[Dict[str, Any]]) -> bool:
+    if not conversational_memory_enabled() or not local_context:
+        return False
+    return int(local_context.get("occurrence_count") or 0) >= memory_refine_min_occurrence()
+
+
+def should_use_viral_global(global_context: Optional[Dict[str, Any]]) -> bool:
+    if not conversational_memory_enabled() or not global_context:
+        return False
+    return int(global_context.get("group_count") or 1) >= memory_viral_min_groups()
+
+
+def repeat_note_prefix() -> str:
+    if memory_show_repeat_note():
+        return "💡 *Note* : Sujet déjà abordé ici. Mise à jour :\n\n"
+    return ""
+
+
 class ConversationalMemoryService:
     """
     Service de mémoire conversationnelle basé sur Redis (Asynchrone).
@@ -226,6 +264,20 @@ class ConversationalMemoryService:
             logger.error(f"[Memory] Erreur search_similar: {e}")
             
         return None
+
+    async def flush_all(self) -> int:
+        """Vide mémoire locale + index global (utile après comportement aberrant)."""
+        deleted = 0
+        try:
+            async for key in self.redis_client.scan_iter("chat_history:*"):
+                deleted += await self.redis_client.delete(key)
+            async for key in self.redis_client.scan_iter("msg_data:*"):
+                deleted += await self.redis_client.delete(key)
+            deleted += await self.redis_client.delete(self._get_global_index_key())
+            logger.info("[Memory] flush_all: %s clés supprimées", deleted)
+        except Exception as e:
+            logger.error("[Memory] Erreur flush_all: %s", e)
+        return deleted
 
     def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
         if len(vec1) != len(vec2):

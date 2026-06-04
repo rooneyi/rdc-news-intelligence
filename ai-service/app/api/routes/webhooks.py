@@ -6,7 +6,13 @@ from app.services.rag_service import RAGService
 from app.services.ocr_service import OCRService
 from app.services.topic_gate_service import TopicGateService
 from app.services.embedding_service import EmbeddingService
-from app.services.memory_service import ConversationalMemoryService
+from app.services.memory_service import (
+    ConversationalMemoryService,
+    conversational_memory_enabled,
+    repeat_note_prefix,
+    should_use_refined_local,
+    should_use_viral_global,
+)
 from app.services.whapi_cloud import (
     decode_whapi_data_uri_image,
     parse_whapi_payload,
@@ -180,18 +186,27 @@ def _build_combined_message(*parts: str | None) -> str:
     return topic_gate_service.merge_text(*parts)
 
 # Ce webhook traitera le message de l'utilisateur et enverra la réponse en arrière-plan
-async def process_telegram_message(chat_id: str, query: str):
+async def process_telegram_message(
+    chat_id: str,
+    query: str,
+    platform_message_id: str | None = None,
+):
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not bot_token:
         logger.error("TELEGRAM_BOT_TOKEN manquant")
         return
 
+    if not await memory_service.claim_inbound_message("telegram", platform_message_id):
+        return
+
     base_url = f"https://api.telegram.org/bot{bot_token}"
 
-    # 1. Mémoire conversationnelle (Locale & Globale Transverse)
     query_embedding = embedding_service.generate(query)
-    local_context = await memory_service.search_similar(chat_id, query_embedding)
-    global_context = await memory_service.search_global_similar(query_embedding)
+    local_context = None
+    global_context = None
+    if conversational_memory_enabled():
+        local_context = await memory_service.search_similar(chat_id, query_embedding)
+        global_context = await memory_service.search_global_similar(query_embedding)
     
     # 2. Topic Gate
     decision = await topic_gate_service.classify(query)
@@ -224,7 +239,7 @@ async def process_telegram_message(chat_id: str, query: str):
 
             # Analyse de la situation (Viralité transverse vs Local vs Nouveau)
             reply_to_id = None
-            if global_context and global_context.get("group_count", 1) > 1:
+            if should_use_viral_global(global_context):
                 group_count = global_context.get("group_count")
                 old_query = global_context.get("last_query", "Sujet transverse")
                 old_verdict = local_context.get("verdict", "") if local_context else ""
@@ -241,13 +256,13 @@ async def process_telegram_message(chat_id: str, query: str):
                 )
                 reply_to_id = local_context.get("root_message_id") if local_context else None
             
-            elif local_context:
+            elif should_use_refined_local(local_context):
                 old_query = local_context.get("query", "Inconnue")
                 old_verdict = local_context.get("verdict", "")
                 reply_to_id = local_context.get("root_message_id")
                 
                 logger.info("[Telegram] Génération d'une réponse raffinée locale.")
-                text_buffer = "💡 *Note* : Sujet déjà abordé ici. Voici une réponse mise à jour :\n\n"
+                text_buffer = repeat_note_prefix()
                 
                 gen = rag_service.generate_refined_answer_stream(
                     query=query,
@@ -321,17 +336,15 @@ async def process_telegram_message(chat_id: str, query: str):
                     break
             
             # Sauvegarder en mémoire à la fin du flux
-            if text_buffer:
+            if text_buffer and conversational_memory_enabled():
                 full_verdict = f"{sources_header}{text_buffer}"
-                # On extrait les sources du sources_header pour les stocker proprement? 
-                # On va juste stocker le verdict complet pour Telegram.
                 await memory_service.add_to_memory(
                     chat_id=chat_id,
                     query=query,
                     embedding=query_embedding,
                     verdict=full_verdict,
-                    sources=[], # Déjà formaté dans le verdict
-                    platform_message_id=str(message_id)
+                    sources=[],
+                    platform_message_id=str(message_id),
                 )
 
     except Exception as e:
@@ -940,14 +953,18 @@ async def process_whatsapp_message(
     *,
     transport: str = "meta",
 ):
-    # ... (vérifications transport existantes) ...
+    platform_key = f"whatsapp:{transport}"
+    if not await memory_service.claim_inbound_message(platform_key, wa_message_id):
+        return
 
     await _whatsapp_mark_read_and_show_typing(wa_message_id)
-    
-    # 1. Mémoire conversationnelle (Locale & Globale Transverse)
+
     query_embedding = embedding_service.generate(query)
-    local_context = await memory_service.search_similar(phone_number, query_embedding)
-    global_context = await memory_service.search_global_similar(query_embedding)
+    local_context = None
+    global_context = None
+    if conversational_memory_enabled():
+        local_context = await memory_service.search_similar(phone_number, query_embedding)
+        global_context = await memory_service.search_global_similar(query_embedding)
     
     # 2. Topic Gate (Thématisation)
     if require_topic_gate:
@@ -964,8 +981,7 @@ async def process_whatsapp_message(
     try:
         reply_to_id = None
         
-        # Cas Viral Transverse
-        if global_context and global_context.get("group_count", 1) > 1:
+        if should_use_viral_global(global_context):
             group_count = global_context.get("group_count")
             old_query = global_context.get("last_query", "Sujet transverse")
             old_verdict = local_context.get("verdict", "") if local_context else ""
@@ -984,8 +1000,7 @@ async def process_whatsapp_message(
             body = f"🔥 *ALERTE VIRALITÉ* : Sujet détecté dans {group_count} groupes. Synthèse d'intelligence :\n\n{verdict}"
             reply_to_id = local_context.get("root_message_id") if local_context else None
             
-        # Cas Local (déjà vu dans ce groupe)
-        elif local_context:
+        elif should_use_refined_local(local_context):
             old_query = local_context.get("query", "Inconnue")
             old_verdict = local_context.get("verdict", "")
             reply_to_id = local_context.get("root_message_id")
@@ -1001,7 +1016,7 @@ async def process_whatsapp_message(
             )
             verdict = rag_res.get("verdict", "")
             sources = rag_res.get("sources", [])
-            body = f"💡 *Note* : Sujet déjà abordé ici. Mise à jour :\n\n{verdict}"
+            body = f"{repeat_note_prefix()}{verdict}"
             
         else:
             logger.info("[Whapi] RAG standard (nouvelle question)")
@@ -1024,15 +1039,15 @@ async def process_whatsapp_message(
         )
         logger.info("[Whapi] Message envoyé id=%s", sent_message_id or "(inconnu)")
 
-        # Sauvegarde Mémoire (Locale & Globale via add_to_memory mise à jour)
-        await memory_service.add_to_memory(
-            chat_id=phone_number,
-            query=query,
-            embedding=query_embedding,
-            verdict=verdict,
-            sources=sources,
-            platform_message_id=sent_message_id
-        )
+        if conversational_memory_enabled():
+            await memory_service.add_to_memory(
+                chat_id=phone_number,
+                query=query,
+                embedding=query_embedding,
+                verdict=verdict,
+                sources=sources,
+                platform_message_id=sent_message_id,
+            )
 
 
     except Exception as e:
@@ -1075,6 +1090,10 @@ async def process_whatsapp_image(
         if not whatsapp_token or not phone_id:
             logger.error("Tokens WhatsApp manquants")
             return
+
+    platform_key = f"whatsapp:{transport}"
+    if not await memory_service.claim_inbound_message(platform_key, wa_message_id):
+        return
 
     await _whatsapp_mark_read_and_show_typing(wa_message_id)
 
@@ -1196,32 +1215,31 @@ async def process_whatsapp_image(
 
             logger.info("[WhatsApp] Texte OCR extrait (%s): %.80s…", phone_number, extracted_text)
 
-            # 1. Mémoire conversationnelle (Clustering / Redondance)
             query_embedding = embedding_service.generate(combined_query)
-            similar_context = await memory_service.search_similar(phone_number, query_embedding)
-            
-            if similar_context:
-                previous_verdict = similar_context.get("verdict")
-                previous_sources = similar_context.get("sources", [])
-                prefix = "Cette image/information semble similaire à une publication déjà vérifiée récemment dans ce groupe.\n\n"
-                
-                sources_text = ""
-                if previous_sources:
-                    lines = []
-                    for i, s in enumerate(previous_sources, 1):
-                        url = s.get("url") or "(lien indisponible)"
-                        title = s.get("title") or "Source locale"
-                        lines.append(f"[{i}] {title} - {url}")
-                    sources_text = "\n🔗 SOURCES LOCALES :\n" + "\n".join(lines) + "\n"
-
-                await _send_whatsapp_text(
-                    phone_number,
-                    f"{prefix}{previous_verdict}{sources_text}",
-                    transport=transport,
+            if conversational_memory_enabled():
+                similar_context = await memory_service.search_similar(
+                    phone_number, query_embedding
                 )
-                return
+                if should_use_refined_local(similar_context):
+                    previous_verdict = similar_context.get("verdict")
+                    previous_sources = similar_context.get("sources", [])
+                    prefix = repeat_note_prefix() or ""
+                    sources_text = ""
+                    if previous_sources:
+                        lines = []
+                        for i, s in enumerate(previous_sources, 1):
+                            url = s.get("url") or "(lien indisponible)"
+                            title = s.get("title") or "Source locale"
+                            lines.append(f"[{i}] {title} - {url}")
+                        sources_text = "\n🔗 SOURCES LOCALES :\n" + "\n".join(lines) + "\n"
+                    await _send_whatsapp_text(
+                        phone_number,
+                        f"{prefix}{previous_verdict}{sources_text}",
+                        transport=transport,
+                    )
+                    return
 
-            # 2. Topic Gate
+            # Topic Gate
             if require_topic_gate:
                 decision = await topic_gate_service.classify(combined_query)
                 if not decision.should_activate:
@@ -1249,13 +1267,14 @@ async def process_whatsapp_image(
                     body = f"{body}\n\n🔗 SOURCES LOCALES :\n" + "\n".join(lines)
                 await _send_whatsapp_long_body(phone_number, body, transport=transport)
 
-                await memory_service.add_to_memory(
-                    chat_id=phone_number,
-                    query=combined_query,
-                    embedding=query_embedding,
-                    verdict=verdict,
-                    sources=sources
-                )
+                if conversational_memory_enabled():
+                    await memory_service.add_to_memory(
+                        chat_id=phone_number,
+                        query=combined_query,
+                        embedding=query_embedding,
+                        verdict=verdict,
+                        sources=sources,
+                    )
             except Exception as e:
                 logger.error(f"Erreur RAG image WhatsApp: {e}")
 
@@ -1310,7 +1329,10 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
                         )
                 return {"status": "ok"}
 
-        background_tasks.add_task(process_telegram_message, str(chat_id), text)
+        tg_msg_id = str(message.get("message_id")) if message.get("message_id") is not None else None
+        background_tasks.add_task(
+            process_telegram_message, str(chat_id), text, tg_msg_id
+        )
         return {"status": "ok"}
 
     if message.get("photo"):
@@ -1339,7 +1361,10 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
                 )
                 return {"status": "ok"}
 
-        background_tasks.add_task(process_telegram_message, str(chat_id), combined_query)
+        tg_msg_id = str(message.get("message_id")) if message.get("message_id") is not None else None
+        background_tasks.add_task(
+            process_telegram_message, str(chat_id), combined_query, tg_msg_id
+        )
         
     return {"status": "ok"}
 
