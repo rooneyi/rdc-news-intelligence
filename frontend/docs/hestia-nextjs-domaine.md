@@ -1,19 +1,96 @@
-# Frontend Next.js sur un domaine Hestia (port 3000)
+# Frontend Next.js sur Hestia (port 3000)
 
-Objectif : garder **l’API** sur un domaine (ex. `rooney-rdc.rooneykalumba.tech` → port **8000**) et le **site Next.js** sur **un autre domaine** (ex. `app.rooney-rdc.rooneykalumba.tech` → port **3000**).
+## Faut-il créer un nouveau domaine ?
 
-## Architecture recommandée
+**Non, ce n’est pas obligatoire.**
 
-| Domaine | Service | Port local |
-|---------|---------|------------|
-| `rooney-rdc.rooneykalumba.tech` | FastAPI (Whapi, `/health`, API JSON) | 8000 |
-| `app.rooney-rdc.rooneykalumba.tech` *(exemple)* | Next.js (accueil, `/client`, `/admin`) | 3000 |
+| Option | Nouveau domaine ? | Quand l’utiliser |
+|--------|-------------------|------------------|
+| **A — Même domaine que l’API** | **Non** | Un seul nom (`rooney-rdc.rooneykalumba.tech`) : nginx envoie `/webhooks` et `/health` vers FastAPI (8000), **tout le reste** vers Next (3000). |
+| **B — Sous-domaine dédié** | **Oui** (ex. `app.…`) | Plus simple à comprendre ; site et API bien séparés. |
 
-Évite le conflit `/admin` (FastAPI vs Next).
+Vous pouvez rester sur **`rooney-rdc.rooneykalumba.tech`** avec l’option A (section ci-dessous).
 
 ---
 
-## 1. Créer le domaine dans Hestia
+## Option A — Même domaine que l’API (recommandé si un seul nom)
+
+Pas de DNS supplémentaire. Vous complétez la config Hestia du domaine **déjà existant**.
+
+| Chemin public | Service | Port |
+|---------------|---------|------|
+| `/health`, `/webhooks/` | FastAPI | 8000 |
+| `/`, `/client`, `/admin` (interface Next) | Next.js | 3000 |
+
+L’admin **web** est `/admin` (Next). L’API JSON `/admin/overview` est appelée **en interne** par Next (`/api/fastapi/…` → `127.0.0.1:8000`), pas besoin d’exposer `/admin/overview` au public.
+
+### Fichier nginx (même domaine API)
+
+```bash
+DOMAIN=rooney-rdc.rooneykalumba.tech
+CONF_DIR="/home/rooney/conf/web/${DOMAIN}"
+
+cat > "${CONF_DIR}/nginx.ssl.conf_rdc-next" <<'EOF'
+# --- FastAPI (priorité : chemins précis) ---
+location = /health {
+    proxy_pass http://127.0.0.1:8000/health;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location /webhooks/ {
+    proxy_pass http://127.0.0.1:8000/webhooks/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 600s;
+    client_max_body_size 20m;
+}
+
+# --- Next.js : tout le reste (accueil, client, admin UI) ---
+location / {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+EOF
+
+export PATH="/usr/local/hestia/bin:$PATH"
+v-rebuild-web-domain rooney "${DOMAIN}"
+```
+
+Gardez aussi `nginx.ssl.conf_rdc-api` si vous l’avez déjà (doublon partiel acceptable) ou **fusionnez** en un seul fichier `rdc-next` ci-dessus.
+
+Vérification :
+
+```bash
+curl -s https://rooney-rdc.rooneykalumba.tech/health
+curl -sI https://rooney-rdc.rooneykalumba.tech/
+curl -sI https://rooney-rdc.rooneykalumba.tech/admin
+```
+
+Puis lancez Next (section « Build et PM2 » plus bas).
+
+---
+
+## Option B — Autre domaine / sous-domaine (optionnel)
+
+Objectif : API sur `rooney-rdc…`, site sur `app.rooney-rdc…`.
+
+| Domaine | Service | Port local |
+|---------|---------|------------|
+| `rooney-rdc.rooneykalumba.tech` | FastAPI (Whapi, `/health`) | 8000 |
+| `app.rooney-rdc.rooneykalumba.tech` | Next.js | 3000 |
+
+---
+
+## 1. Créer le domaine dans Hestia (option B seulement)
 
 1. Panneau Hestia → **Web** → **Add web domain** (ou **Add subdomain**).
 2. Domaine exemple : `app.rooney-rdc.rooneykalumba.tech`.
@@ -60,7 +137,13 @@ En **root** si besoin : `nginx -t && systemctl reload nginx`
 
 ---
 
-## 3. Build et lancer Next.js sur le VPS
+## 2b. Proxy nginx (option B — sous-domaine dédié)
+
+Voir bloc `APP_DOMAIN=app.rooney-rdc...` dans la section suivante du fichier (inchangé).
+
+---
+
+## 3. Build et lancer Next.js sur le VPS (options A et B)
 
 ```bash
 cd ~/web/rooney-rdc.rooneykalumba.tech/public_html/rdc-news-intelligence/frontend
@@ -125,4 +208,4 @@ Chez votre registrar, ajoutez un enregistrement **A** (ou CNAME) :
 
 ---
 
-*API sur le même domaine : voir `ai-service/docs/hestia-reverse-proxy.md` (chemins `/health`, `/webhooks` seulement).*
+*Détails API seule : `ai-service/docs/hestia-reverse-proxy.md`.*
