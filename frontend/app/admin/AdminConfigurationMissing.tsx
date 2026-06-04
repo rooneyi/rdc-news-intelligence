@@ -1,7 +1,7 @@
 export default function AdminConfigurationMissing() {
   return (
     <div className="mx-auto max-w-lg px-5 py-16 text-center text-slate-300">
-      <p className="text-lg font-semibold text-amber-200">Configuration admin manquante</p>
+      <p className="text-lg font-semibold text-red-200">Configuration admin manquante</p>
       <p className="mt-2 text-sm text-slate-400">
         Définissez{" "}
         <code className="text-slate-300">ADMIN_PASSWORD</code>,{" "}

@@ -377,7 +377,7 @@
         "growY": 0,
         "scale": 1,
         "labelColor": "black",
-        "color": "orange",
+        "color": "blue",
         "fill": "semi",
         "size": "m",
         "font": "sans",

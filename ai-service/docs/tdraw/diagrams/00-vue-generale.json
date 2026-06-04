@@ -4,13 +4,13 @@
     { "id": "wa", "group": "1. Messagerie", "label": "WhatsApp\nGroupe ou classique", "color": "green" },
     { "id": "msg", "group": "1. Messagerie", "label": "① Message\nTexte ou image", "color": "green" },
     { "id": "whapi", "group": "1. Messagerie", "label": "Whapi.Cloud\n(passerelle)", "color": "green" },
-    { "id": "webhook", "group": "2. Serveur en ligne", "label": "② Envoi en ligne\nPOST /webhooks/whapi", "color": "orange" },
-    { "id": "queue", "group": "2. Serveur en ligne", "label": "③ File d'attente\n(proxy_only)", "color": "orange" },
+    { "id": "webhook", "group": "2. Serveur en ligne", "label": "② Envoi en ligne\nPOST /webhooks/whapi", "color": "blue" },
+    { "id": "queue", "group": "2. Serveur en ligne", "label": "③ File d'attente\n(proxy_only)", "color": "blue" },
     { "id": "poll", "group": "3. Machine locale", "label": "④ Polling\nqueue/pop (~2 s)", "color": "violet" },
     { "id": "topic", "group": "3. Machine locale", "label": "Vérifier thématique\n(Mistral + mots-clés)", "color": "violet" },
     { "id": "chroma", "group": "3. Machine locale", "label": "Articles proches\nChromaDB (vecteurs)", "color": "violet" },
     { "id": "verdict", "group": "3. Machine locale", "label": "⑤ Traiter\nVrai / Faux / Imprécis", "color": "violet" },
-    { "id": "relay", "group": "2. Serveur en ligne", "label": "reply-relay\n→ API Whapi", "color": "orange" },
+    { "id": "relay", "group": "2. Serveur en ligne", "label": "reply-relay\n→ API Whapi", "color": "blue" },
     { "id": "reply", "group": "1. Messagerie", "label": "⑥ Réponse\nsur WhatsApp", "color": "green" }
   ],
   "edges": [

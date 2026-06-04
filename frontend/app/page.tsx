@@ -9,34 +9,28 @@ const appName = getAppDisplayName();
 export default function HomePage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 py-6 md:px-8">
-      <header className="rdc-card mb-8 flex items-center justify-between rounded-2xl px-5 py-3">
+      <header className="rdc-card rdc-motion-in mb-8 flex items-center justify-between rounded-2xl px-5 py-3">
         <div className="flex items-center gap-3">
-          <div className="rounded-lg border border-blue-300/30 bg-blue-500/15 p-2 text-blue-300">
+          <div className="rdc-icon-badge rounded-lg p-2">
             <Shield size={15} />
           </div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-blue-300">
+          <p className="rdc-brand-text text-[11px] font-semibold uppercase tracking-[0.28em]">
             {appName}
           </p>
         </div>
         <div className="flex gap-2">
-          <Link
-            href="/client"
-            className="rounded-xl border border-slate-500/30 bg-slate-700/30 px-4 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-slate-700/50"
-          >
+          <Link href="/client" className="rdc-btn-ghost rounded-xl px-4 py-1.5 text-xs font-medium">
             Espace client
           </Link>
-          <Link
-            href="/admin"
-            className="rounded-xl bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-500"
-          >
+          <Link href="/admin" className="rdc-btn-primary rounded-xl px-4 py-1.5 text-xs font-semibold">
             Administration
           </Link>
         </div>
       </header>
 
       <section className="grid flex-1 items-center gap-6 pb-10 lg:grid-cols-2">
-        <div>
-          <span className="mb-5 inline-flex items-center rounded-full border border-blue-300/30 bg-blue-500/10 px-4 py-1 text-xs text-blue-200">
+        <div className="rdc-motion-in rdc-motion-delay-1">
+          <span className="rdc-pill mb-5 inline-flex items-center rounded-full px-4 py-1 text-xs">
             Fact-checking WhatsApp et Telegram
           </span>
           <h1 className="mb-5 text-4xl font-semibold leading-tight text-slate-100 md:text-5xl">
@@ -49,20 +43,17 @@ export default function HomePage() {
           <div className="flex flex-wrap gap-3">
             <Link
               href="/client"
-              className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-500"
+              className="rdc-btn-primary inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold"
             >
               Poser une question <ArrowRight size={15} />
             </Link>
-            <Link
-              href="/admin"
-              className="rounded-2xl border border-slate-500/30 bg-slate-700/30 px-5 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-700/50"
-            >
+            <Link href="/admin" className="rdc-btn-ghost rounded-2xl px-5 py-3 text-sm font-semibold">
               Administration
             </Link>
           </div>
         </div>
 
-        <div className="rdc-card rounded-3xl p-5 md:p-6">
+        <div className="rdc-card rdc-motion-in rdc-motion-delay-2 rounded-3xl p-5 md:p-6">
           <div className="mb-4 grid gap-3 sm:grid-cols-3">
             {[
               { icon: <Database size={14} />, label: "Sources", value: "12+" },
@@ -81,7 +72,7 @@ export default function HomePage() {
           <div className="rounded-xl border border-slate-500/20 bg-slate-900/50 p-4 text-sm leading-6 text-slate-300">
             <p className="mb-2 text-xs uppercase tracking-wider text-slate-400">Exemple de verdict</p>
             <p className="mb-2">
-              <span className="font-semibold text-amber-300">IMPRÉCIS</span> — La déclaration ne
+              <span className="font-semibold text-blue-300">IMPRÉCIS</span> — La déclaration ne
               correspond pas aux articles récents disponibles.
             </p>
             <p className="rdc-muted text-xs">Sources: Radio Okapi, ACP, actualite.cd</p>

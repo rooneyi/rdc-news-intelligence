@@ -110,11 +110,11 @@ export default function AdminPage() {
     <main className="mx-auto min-h-screen w-full max-w-6xl px-5 py-5 md:px-8">
       <header className="rdc-card mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl px-5 py-3">
         <div className="flex items-center gap-3">
-          <div className="rounded-lg border border-blue-300/30 bg-blue-500/15 p-2 text-blue-300">
+          <div className="rdc-icon-badge rounded-lg p-2">
             <Shield size={15} />
           </div>
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-blue-300">
+            <p className="rdc-brand-text text-[11px] font-semibold uppercase tracking-[0.28em]">
               {appName}
             </p>
             <p className="text-[10px] text-slate-500">Administration · {adminEmail}</p>
@@ -128,8 +128,11 @@ export default function AdminPage() {
           >
             <LogOut size={14} /> Déconnexion
           </button>
-          <Link href="/" className="rounded-xl border border-slate-500/30 px-3 py-1.5 text-xs text-slate-200">
-            Retour accueil
+          <Link href="/admin/corpus" className="rdc-btn-primary rounded-xl px-3 py-1.5 text-xs font-semibold">
+            Corpus détaillé
+          </Link>
+          <Link href="/" className="rdc-btn-ghost rounded-xl px-3 py-1.5 text-xs">
+            Accueil
           </Link>
         </div>
       </header>
@@ -154,7 +157,7 @@ export default function AdminPage() {
           <button
             onClick={() => void loadOverview(true)}
             disabled={refreshing}
-            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-700"
+            className="rdc-btn-primary inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed"
           >
             <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />{" "}
             {refreshing ? "Actualisation..." : "Rafraîchir"}
@@ -179,7 +182,7 @@ export default function AdminPage() {
                 {(data?.top_sources ?? []).map((row) => (
                   <li key={row.source} className="flex items-center justify-between">
                     <span className="truncate">{row.source}</span>
-                    <span className="text-blue-300">{row.count}</span>
+                    <span className="rdc-brand-text">{row.count}</span>
                   </li>
                 ))}
               </ul>
@@ -197,11 +200,11 @@ export default function AdminPage() {
               <ul className="space-y-1 text-sm text-slate-300">
                 <li className="flex items-center justify-between">
                   <span>Articles sans source</span>
-                  <span className="text-amber-300">{data?.stats.missing_source_articles ?? 0}</span>
+                  <span className="text-red-300">{data?.stats.missing_source_articles ?? 0}</span>
                 </li>
                 <li className="flex items-center justify-between">
                   <span>Articles sans lien</span>
-                  <span className="text-amber-300">{data?.stats.missing_link_articles ?? 0}</span>
+                  <span className="text-red-300">{data?.stats.missing_link_articles ?? 0}</span>
                 </li>
                 <li className="flex items-center justify-between">
                   <span>Backend IA</span>
@@ -254,7 +257,7 @@ export default function AdminPage() {
                       </div>
                       <div className="h-2 rounded bg-slate-700/60">
                         <div
-                          className={`h-2 rounded transition-all ${orphan ? "bg-slate-500/50" : "bg-blue-500/80"}`}
+                          className={`h-2 rounded transition-all duration-500 ${orphan ? "bg-slate-500/50" : "rdc-accent-bar"}`}
                           style={{ width: `${width}%` }}
                         />
                       </div>

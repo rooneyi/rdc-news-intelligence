@@ -41,7 +41,7 @@ export default function AdminLoginForm({ appName, adminEmail }: Props) {
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-5 py-12">
       <div className="rdc-card rounded-2xl p-8">
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
-          <div className="rounded-xl border border-blue-400/30 bg-blue-500/15 p-3 text-blue-300">
+          <div className="rdc-icon-badge rounded-xl p-3">
             <Shield size={28} />
           </div>
           <h1 className="text-lg font-semibold text-slate-100">{appName}</h1>
@@ -63,7 +63,7 @@ export default function AdminLoginForm({ appName, adminEmail }: Props) {
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-xl border border-slate-600/50 bg-slate-900/60 px-4 py-3 text-slate-100 outline-none ring-blue-500/40 placeholder:text-slate-600 focus:border-blue-500/50 focus:ring-2"
+              className="rdc-input w-full rounded-xl border border-slate-600/50 bg-slate-900/60 px-4 py-3 text-slate-100 placeholder:text-slate-600"
               placeholder="••••••••"
               disabled={pending}
               required
@@ -79,7 +79,7 @@ export default function AdminLoginForm({ appName, adminEmail }: Props) {
           <button
             type="submit"
             disabled={pending}
-            className="w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-600"
+            className="rdc-btn-primary w-full rounded-xl py-3 text-sm font-semibold disabled:cursor-not-allowed"
           >
             {pending ? "Connexion…" : "Se connecter"}
           </button>

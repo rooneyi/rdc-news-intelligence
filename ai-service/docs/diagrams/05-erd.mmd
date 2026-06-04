@@ -1,27 +1,35 @@
+%% PostgreSQL seul — pas de embedding dans articles (vecteurs = ChromaDB)
+%% ERD global : thesis/figures/05-erd-donnees.mmd
+
 erDiagram
     ARTICLES {
         int id PK
-        string title
-        string content
-        string source_id
-        string link
-        string hash
-        string categories
-        string image
-        string embedding
-        datetime created_at
+        text title
+        text content
+        text source_id
+        text link UK
+        text hash UK
+        text_array categories
+        text image
+        timestamp created_at
     }
 
     TRAINING_RUNS {
         int id PK
-        datetime started_at
-        datetime ended_at
-        string status
-        string model_name
+        timestamp started_at
+        timestamp ended_at
+        text status
+        text model_name
         int processed_count
         int reembedded_count
-        string note
-        datetime created_at
+        text note
+        timestamp created_at
     }
 
-    TRAINING_RUNS ||--o{ ARTICLES : reembedding_updates
+    CHROMA_ARTICLES_RDC {
+        string id PK "articles.id"
+        float_vector embedding "384D"
+        text document
+    }
+
+    ARTICLES ||--|| CHROMA_ARTICLES_RDC : "sync upsert"

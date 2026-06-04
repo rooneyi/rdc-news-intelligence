@@ -291,6 +291,7 @@ class RAGService:
             articles = self.retrieval_service.search(query_embedding, limit=top_k * 3)
             
             if self.enable_rerank and len(articles) > 1:
+                logger.info("[RAGService] Re-ranking avant génération (%s candidats)", len(articles))
                 articles = await self.llm_service.rerank(query, articles)
 
             articles = self._filter_relevant_articles(articles, channel)
@@ -305,7 +306,7 @@ class RAGService:
                     "sources": []
                 }
 
-            # Pas de timeout : on attend la réponse complète de Mistral
+            logger.info("[RAGService] Appel Mistral/Ollama (generate_full_answer, %s sources)", len(articles))
             verdict = await self.llm_service.summarize_full(query, articles, channel=channel)
             return {
                 "verdict": verdict,

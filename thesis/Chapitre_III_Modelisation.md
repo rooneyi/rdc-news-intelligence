@@ -51,6 +51,9 @@ Les reseaux sociaux et les modeles externes ne sont pas modelises comme composan
 
 ## 3.3 Diagramme de cas d'utilisation
 
+> **Figure a inserer :** exporter `thesis/figures/01-use-cases.mmd` en PNG (mermaid.live) ou recopier depuis `Diagrammes_UML_Mermaid.md` § 1a.  
+> Acteurs : utilisateur messagerie, utilisateur web, administrateur, passerelle Whapi/Telegram, sources web externes.
+
 ### 3.3.1 Cas d'utilisation principaux
 
 Les cas d'utilisation metier identifies sont:
@@ -170,6 +173,18 @@ Relations majeures:
 - `Message *..1 -> TopicCluster` (optionnel si nouveau sujet)
 - `TopicCluster 1..* -> Message`
 - `Verdict 1..1 -> TopicCluster` (dernier verdict pivot)
+
+### 3.5.4 Diagramme entite-relation (stockage)
+
+> **Figure a inserer :** `thesis/figures/05-erd-donnees.mmd` (PostgreSQL + ChromaDB + Redis + catalogue `sources.json`).  
+> PostgreSQL seul : `Diagrammes_UML_Mermaid.md` § 13. **Ne pas** representer les embeddings dans la table SQL `articles`.
+
+| Stockage | Role | Entites principales |
+|----------|------|---------------------|
+| PostgreSQL | Metadonnees articles | `articles`, `training_runs` (journal) |
+| ChromaDB | Vecteurs 384D, recherche Top-k | collection `articles_rdc`, cle `id` = `articles.id` |
+| Redis | Memoire conversationnelle (TTL) | `chat_history:{chat_id}`, `msg_data:{hash}`, `global_topics_index` |
+| Fichier | Catalogue crawler | `data/crawler/sources.json` → `articles.source_id` (logique) |
 
 ## 3.6 Vue composants (architecture logique)
 

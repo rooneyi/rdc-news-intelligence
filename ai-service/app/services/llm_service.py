@@ -130,6 +130,12 @@ Articles de référence :
         self, query: str, articles: List[ArticleOut], channel: str = "web"
     ) -> str:
         """Réponse RAG non streamée (WhatsApp / Telegram / endpoints sync)."""
+        logger.info(
+            "[LLMService] Génération complète (%s articles, canal=%s) : %.80s",
+            len(articles),
+            channel,
+            query,
+        )
         parts: list[str] = []
         async for chunk in self.summarize_stream(query, articles, channel):
             parts.append(chunk)
@@ -238,6 +244,12 @@ Format strict :
         channel: str = "web"
     ) -> AsyncGenerator[str, None]:
         """Génère une réponse améliorée basée sur une réponse similaire précédente."""
+        logger.info(
+            "[LLMService] Raffinement (%s articles, canal=%s) : %.80s",
+            len(articles),
+            channel,
+            query,
+        )
         prompt = self._build_refined_prompt(query, old_query, old_verdict, articles, channel)
         url = f"{self.host}/api/generate"
         

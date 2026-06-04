@@ -1,0 +1,44 @@
+%% Figure 2 — Cas d'utilisation (Chapitre III § 3.3)
+%% Export : https://mermaid.live → PNG → thesis/figures/fig-02-use-cases.png
+%% draw.io : bibliothèque UML, recopier depuis Diagrammes_UML_Mermaid.md § 1
+
+useCaseDiagram
+    title Diagramme de cas d'utilisation — RDC News Intelligence
+
+    actor "Utilisateur\n(messagerie)" as UMsg
+    actor "Utilisateur\n(web / client)" as UWeb
+    actor Administrateur as Admin
+    actor "Passerelle\nWhapi / Telegram" as GW
+    actor "Sources web\n(RSS / médias)" as Src
+
+    rectangle "« système » RDC News Intelligence" {
+        usecase UC1 as "Soumettre une information\nà vérifier"
+        usecase UC2 as "Recevoir un verdict\ncontextualisé"
+        usecase UC3 as "Recevoir une réponse\nnon redondante"
+        usecase UC4 as "Mettre à jour la base\ndocumentaire"
+        usecase UC5 as "Superviser l'état\ndu service"
+        usecase UC6 as "Normaliser le message"
+        usecase UC7 as "Classifier le thème\n(topic gate)"
+        usecase UC8 as "Récupérer les sources\n(Top-k RAG)"
+        usecase UC9 as "Indexer en vectoriel\n(ChromaDB)"
+        usecase UC10 as "Extraire texte OCR\n(image)"
+        usecase UC11 as "Consulter le corpus\n(recherche web)"
+    }
+
+    UMsg --> UC1
+    UWeb --> UC11
+    UWeb --> UC2
+    GW --> UC1
+    UMsg --> UC2
+    UMsg --> UC3
+    Admin --> UC4
+    Admin --> UC5
+    Src --> UC4
+
+    UC1 ..> UC6 : <<include>>
+    UC1 ..> UC7 : <<include>>
+    UC1 ..> UC10 : <<include>>
+    UC2 ..> UC8 : <<include>>
+    UC3 ..> UC2 : <<extend>>
+    UC4 ..> UC9 : <<include>>
+    UC11 ..> UC8 : <<include>>

@@ -299,3 +299,8 @@ Notre contribution vise un dispositif conversationnel de vérification à la foi
 ## Références
 
 Les références bibliographiques de ce chapitre sont centralisées dans `thesis/References.md`, avec une numérotation IEEE unique et continue pour l'ensemble du mémoire (numéros [1] à [36]).
+
+
+## Arcticle en bdd
+
+psql -h 127.0.0.1 -p "${DB_PORT:-5432}" -U "rdc_user" -d "rdc_news" -c "SELECT COUNT(*) AS total_articles FROM articles;"

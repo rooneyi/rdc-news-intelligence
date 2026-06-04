@@ -26,6 +26,35 @@ vector_store_service = VectorStoreService()
 _SOURCES_JSON = Path(__file__).resolve().parents[3] / "data" / "crawler" / "sources.json"
 
 
+_LANG_LABELS = {
+    "fr": "Français",
+    "en": "Anglais",
+    "sw": "Swahili",
+    "unknown": "Non classé",
+}
+
+
+def _source_lang_map() -> dict[str, str]:
+    """sourceId → fr | en | sw (défaut fr si absent du catalogue)."""
+    if not _SOURCES_JSON.exists():
+        return {}
+    try:
+        with _SOURCES_JSON.open(encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Impossible de lire %s: %s", _SOURCES_JSON, exc)
+        return {}
+    out: dict[str, str] = {}
+    for section in ("html", "wordpress"):
+        for item in data.get("sources", {}).get(section, []) or []:
+            sid = item.get("sourceId")
+            if not isinstance(sid, str) or not sid.strip():
+                continue
+            raw = (item.get("sourceLang") or "fr").strip().lower()
+            out[sid.strip()] = raw if raw in ("en", "sw", "fr") else "fr"
+    return out
+
+
 def _crawler_catalog_source_ids() -> list[str]:
     """Identifiants déclarés dans data/crawler/sources.json (ordre du fichier, sans doublon)."""
     if not _SOURCES_JSON.exists():
@@ -329,6 +358,232 @@ def admin_overview():
             "top_sources": top_sources,
             "sources_breakdown": breakdown,
             "latest_articles": latest_articles,
+        }
+    finally:
+        cur.close()
+        conn.close()
+
+
+def _article_row_to_dict(row) -> dict:
+    return {
+        "id": int(row[0]),
+        "title": row[1] or "",
+        "source": row[2] or "unknown",
+        "link": row[3] or "",
+        "categories": row[4] if row[4] else [],
+    }
+
+
+@router.get("/admin/corpus", summary="Corpus: langues, catégories, échantillons", tags=["Admin"])
+def admin_corpus():
+    """
+    Statistiques détaillées du corpus : langues (via source_id / sources.json),
+    catégories PostgreSQL, sources, qualité et extraits d'articles.
+    """
+    lang_map = _source_lang_map()
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT COUNT(*) FROM articles")
+        total = int(cur.fetchone()[0] or 0)
+        embedded = vector_store_service.collection.count()
+
+        cur.execute(
+            """
+            SELECT COALESCE(NULLIF(TRIM(source_id), ''), 'unknown') AS source, COUNT(*) AS n
+            FROM articles
+            GROUP BY source
+            """
+        )
+        source_counts = {row[0]: int(row[1]) for row in cur.fetchall()}
+
+        lang_counts: dict[str, int] = {"fr": 0, "en": 0, "sw": 0, "unknown": 0}
+        lang_sources: dict[str, list[dict]] = {k: [] for k in lang_counts}
+        for sid, n in sorted(source_counts.items(), key=lambda x: -x[1]):
+            if not sid or sid == "unknown":
+                lang = "unknown"
+            else:
+                lang = lang_map.get(sid, "fr")
+            lang_counts[lang] = lang_counts.get(lang, 0) + n
+            lang_sources.setdefault(lang, []).append({"source": sid, "count": n})
+
+        languages = []
+        for code in ("fr", "en", "sw", "unknown"):
+            n = lang_counts.get(code, 0)
+            languages.append(
+                {
+                    "code": code,
+                    "label": _LANG_LABELS[code],
+                    "count": n,
+                    "percent": round((n / total) * 100, 2) if total else 0.0,
+                    "sources": lang_sources.get(code, [])[:12],
+                }
+            )
+
+        cur.execute(
+            """
+            SELECT cat, COUNT(*)::int AS n
+            FROM (
+                SELECT unnest(categories) AS cat
+                FROM articles
+                WHERE categories IS NOT NULL AND cardinality(categories) > 0
+            ) expanded
+            GROUP BY cat
+            ORDER BY n DESC
+            """
+        )
+        category_rows = cur.fetchall()
+
+        cur.execute(
+            """
+            SELECT COUNT(*)::int FROM articles
+            WHERE categories IS NULL
+               OR cardinality(categories) = 0
+            """
+        )
+        without_category = int(cur.fetchone()[0] or 0)
+
+        categories = [
+            {
+                "name": row[0],
+                "count": int(row[1]),
+                "percent": round((int(row[1]) / total) * 100, 2) if total else 0.0,
+            }
+            for row in category_rows
+        ]
+        if without_category:
+            categories.append(
+                {
+                    "name": "(sans catégorie)",
+                    "count": without_category,
+                    "percent": round((without_category / total) * 100, 2) if total else 0.0,
+                }
+            )
+
+        cur.execute(
+            """
+            SELECT COUNT(*)::int FROM articles
+            WHERE source_id IS NULL OR TRIM(source_id) = ''
+            """
+        )
+        missing_source = int(cur.fetchone()[0] or 0)
+        cur.execute(
+            """
+            SELECT COUNT(*)::int FROM articles
+            WHERE link IS NULL OR TRIM(link) = ''
+            """
+        )
+        missing_link = int(cur.fetchone()[0] or 0)
+
+        def _samples_for_lang(lang_code: str, limit: int = 5) -> list[dict]:
+            if lang_code == "unknown":
+                known = set(lang_map.keys())
+                if not known:
+                    cur.execute(
+                        """
+                        SELECT id, title, COALESCE(source_id, 'unknown'), COALESCE(link, ''),
+                               COALESCE(categories, '{}')
+                        FROM articles
+                        ORDER BY id DESC
+                        LIMIT %s
+                        """,
+                        (limit,),
+                    )
+                else:
+                    placeholders = ",".join(["%s"] * len(known))
+                    cur.execute(
+                        f"""
+                        SELECT id, title, COALESCE(source_id, 'unknown'), COALESCE(link, ''),
+                               COALESCE(categories, '{{}}')
+                        FROM articles
+                        WHERE source_id IS NULL
+                           OR TRIM(source_id) = ''
+                           OR source_id NOT IN ({placeholders})
+                        ORDER BY id DESC
+                        LIMIT %s
+                        """,
+                        (*known, limit),
+                    )
+            else:
+                ids = [s for s, lg in lang_map.items() if lg == lang_code]
+                if not ids:
+                    return []
+                placeholders = ",".join(["%s"] * len(ids))
+                cur.execute(
+                    f"""
+                    SELECT id, title, COALESCE(source_id, 'unknown'), COALESCE(link, ''),
+                           COALESCE(categories, '{{}}')
+                    FROM articles
+                    WHERE source_id IN ({placeholders})
+                    ORDER BY id DESC
+                    LIMIT %s
+                    """,
+                    (*ids, limit),
+                )
+            return [_article_row_to_dict(r) for r in cur.fetchall()]
+
+        def _samples_for_category(cat_name: str, limit: int = 5) -> list[dict]:
+            if cat_name == "(sans catégorie)":
+                cur.execute(
+                    """
+                    SELECT id, title, COALESCE(source_id, 'unknown'), COALESCE(link, ''),
+                           COALESCE(categories, '{}')
+                    FROM articles
+                    WHERE categories IS NULL OR cardinality(categories) = 0
+                    ORDER BY id DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT id, title, COALESCE(source_id, 'unknown'), COALESCE(link, ''),
+                           COALESCE(categories, '{}')
+                    FROM articles
+                    WHERE %s = ANY(categories)
+                    ORDER BY id DESC
+                    LIMIT %s
+                    """,
+                    (cat_name, limit),
+                )
+            return [_article_row_to_dict(r) for r in cur.fetchall()]
+
+        for lang in languages:
+            if lang["count"] > 0:
+                lang["samples"] = _samples_for_lang(lang["code"], 5)
+
+        for cat in categories[:8]:
+            cat["samples"] = _samples_for_category(cat["name"], 4)
+
+        catalog_ids = _crawler_catalog_source_ids()
+        catalog_set = set(catalog_ids)
+        sources_breakdown = []
+        for sid in catalog_ids:
+            sources_breakdown.append(
+                {"source": sid, "count": source_counts.get(sid, 0), "in_catalog": True}
+            )
+        for sid, n in sorted(source_counts.items(), key=lambda x: -x[1]):
+            if sid not in catalog_set:
+                sources_breakdown.append(
+                    {"source": sid, "count": n, "in_catalog": False}
+                )
+        sources_breakdown.sort(key=lambda x: (-x["count"], x["source"]))
+
+        return {
+            "status": "ok",
+            "stats": {
+                "total_articles": total,
+                "embedded_articles": embedded,
+                "embedding_coverage": round((embedded / total) * 100, 2) if total else 0.0,
+                "distinct_categories": len(category_rows),
+                "catalog_sources": len(catalog_ids),
+                "missing_source_articles": missing_source,
+                "missing_link_articles": missing_link,
+            },
+            "languages": languages,
+            "categories": categories,
+            "sources_breakdown": sources_breakdown,
         }
     finally:
         cur.close()

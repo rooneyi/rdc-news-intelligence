@@ -3,7 +3,7 @@
   "nodes": [
     { "id": "sources", "group": "Collecte", "label": "sources.json\nmédias RDC", "color": "blue" },
     { "id": "crawler", "group": "Collecte", "label": "Crawler sync\nHTML / WordPress", "color": "blue" },
-    { "id": "api_ingest", "group": "Collecte", "label": "POST /crawler/articles\n→ Postgres", "color": "orange" },
+    { "id": "api_ingest", "group": "Collecte", "label": "POST /crawler/articles\n→ Postgres", "color": "blue" },
     { "id": "pg", "group": "Stockage", "label": "PostgreSQL\nmétadonnées articles", "color": "grey" },
     { "id": "emb", "group": "Vectorisation", "label": "EmbeddingService\nMiniLM 384d", "color": "violet" },
     { "id": "chroma", "group": "Stockage", "label": "ChromaDB\narticles_rdc", "color": "green" },

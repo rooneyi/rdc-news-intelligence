@@ -163,10 +163,10 @@ export default function ClientPage() {
           >
             <Menu size={15} />
           </button>
-          <div className="rounded-lg border border-blue-300/30 bg-blue-500/15 p-2 text-blue-300">
+          <div className="rdc-icon-badge rounded-lg p-2">
             <Shield size={14} />
           </div>
-          <span className="text-[11px] font-semibold uppercase tracking-[0.28em] text-blue-300">
+          <span className="rdc-brand-text text-[11px] font-semibold uppercase tracking-[0.28em]">
             Espace client
           </span>
         </div>
@@ -203,14 +203,14 @@ export default function ClientPage() {
             {messages.map((msg) => (
               <div key={msg.id} className={msg.role === "user" ? "flex justify-end" : "flex"}>
                 {msg.role === "assistant" && (
-                  <div className="mr-2 mt-1 rounded-full border border-blue-300/30 bg-blue-500/15 p-2 text-blue-300">
+                  <div className="rdc-icon-badge mr-2 mt-1 rounded-full p-2">
                     <Bot size={13} />
                   </div>
                 )}
                 <div
                   className={
                     msg.role === "user"
-                      ? "max-w-[82%] rounded-2xl rounded-br-md bg-blue-600 px-4 py-3 text-sm text-white"
+                      ? "rdc-user-bubble max-w-[82%] rounded-2xl rounded-br-md px-4 py-3 text-sm"
                       : "max-w-[82%] rounded-2xl rounded-bl-md border border-slate-600/40 bg-slate-800/60 px-4 py-3 text-sm text-slate-200"
                   }
                 >
@@ -251,7 +251,7 @@ export default function ClientPage() {
               <button
                 onClick={() => void handleSubmit()}
                 disabled={!query.trim() || loading}
-                className="rounded-lg bg-blue-600 p-2 text-white transition disabled:cursor-not-allowed disabled:bg-slate-700"
+                className="rdc-btn-primary rounded-lg p-2 disabled:cursor-not-allowed"
                 aria-label="Envoyer"
               >
                 <Send size={14} />

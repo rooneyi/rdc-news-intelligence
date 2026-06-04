@@ -17,7 +17,55 @@ Chaque bloc ` ```mermaid ` peut être prévisualisé dans Cursor, GitHub, ou [me
 
 ## 1. Diagramme de cas d'utilisation
 
-**Acteurs :** Utilisateur, Administrateur, Passerelle messagerie (Whapi/Telegram), Sources web (externe)
+**Acteurs :** Utilisateur messagerie, Utilisateur web, Administrateur, Passerelle (Whapi/Telegram), Sources web (externe)
+
+**Fichier figure mémoire :** `thesis/figures/01-use-cases.mmd` (notation UML `useCaseDiagram`).
+
+### 1a. Version UML (recommandée pour le mémoire)
+
+```mermaid
+useCaseDiagram
+    title RDC News Intelligence — cas d'utilisation
+
+    actor "Utilisateur\n(messagerie)" as UMsg
+    actor "Utilisateur\n(web)" as UWeb
+    actor Administrateur as Admin
+    actor "Passerelle\nWhapi / Telegram" as GW
+    actor "Sources web" as Src
+
+    rectangle "RDC News Intelligence" {
+        usecase UC1 as "Soumettre une information\nà vérifier"
+        usecase UC2 as "Recevoir un verdict\ncontextualisé"
+        usecase UC3 as "Recevoir une réponse\nnon redondante"
+        usecase UC4 as "Mettre à jour la base\ndocumentaire"
+        usecase UC5 as "Superviser l'état\ndu service"
+        usecase UC6 as "Normaliser le message"
+        usecase UC7 as "Classifier le thème"
+        usecase UC8 as "Récupérer les sources"
+        usecase UC9 as "Indexer en vectoriel"
+        usecase UC10 as "Extraire texte OCR"
+        usecase UC11 as "Consulter le corpus\n(recherche web)"
+    }
+
+    UMsg --> UC1
+    UWeb --> UC11
+    GW --> UC1
+    UMsg --> UC2
+    UMsg --> UC3
+    Admin --> UC4
+    Admin --> UC5
+    Src --> UC4
+
+    UC1 ..> UC6 : <<include>>
+    UC1 ..> UC7 : <<include>>
+    UC1 ..> UC10 : <<include>>
+    UC2 ..> UC8 : <<include>>
+    UC3 ..> UC2 : <<extend>>
+    UC4 ..> UC9 : <<include>>
+    UC11 ..> UC8 : <<include>>
+```
+
+### 1b. Version flowchart (draw.io / aperçu rapide)
 
 ```mermaid
 flowchart TB
@@ -668,8 +716,9 @@ erDiagram
         timestamp created_at "DEFAULT now()"
     }
 
-    ARTICLES ||--o{ TRAINING_RUNS : "réindexation / sync Chroma"
 ```
+
+> `training_runs` est un **journal opérationnel** (sync Chroma, pipeline) : **pas de clé étrangère** vers `articles`. Ne pas tracer de ligne FK entre les deux tables sur l'ERD PostgreSQL strict.
 
 **Index et contraintes (draw.io — annoter sur les tables) :**
 
@@ -937,7 +986,7 @@ sequenceDiagram
 
 | Section chapitre III | Fichier Mermaid (section) | Fichier draw.io existant (ai-service/docs) |
 |----------------------|---------------------------|--------------------------------------------|
-| § 3.3 Cas d'utilisation | § 1 ou § 2 | `01-use-cases.drawio` |
+| § 3.3 Cas d'utilisation | § **1a** ou `thesis/figures/01-use-cases.mmd` | `01-use-cases.drawio` |
 | § 3.4.1 Séquence RAG | § 3 | `03-rag-sequence.drawio` |
 | § 3.4.2 Anti-redondance | § 4 | `06-anti-infobesity-architecture.drawio` |
 | § 3.4.3 OCR | § 5 | `Diagramme_Sequence_Interception.drawio` |
@@ -948,6 +997,7 @@ sequenceDiagram
 | § 3.7 Déploiement | § 10 ou § 11 | `02-deployment-sequence.drawio` |
 | Flux décisionnel | § 12 | — |
 | **Base de données PostgreSQL (ERD)** | **§ 13–14** | `05-erd.drawio` |
+| **ERD global (PG + Chroma + Redis)** | **`thesis/figures/05-erd-donnees.mmd`** | — |
 | **ChromaDB collection** | **§ 15** | — |
 | **Catalogue sources JSON** | **§ 16** | — |
 | **Redis mémoire** | **§ 17** | — |

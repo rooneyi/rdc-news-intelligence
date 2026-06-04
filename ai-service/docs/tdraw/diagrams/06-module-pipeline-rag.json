@@ -8,7 +8,7 @@
     { "id": "rerank", "group": "Recherche", "label": "rerank Mistral\n(optionnel)", "color": "violet" },
     { "id": "filt", "group": "Recherche", "label": "Filtre similarité\n≥ 0.40", "color": "red" },
     { "id": "topk", "group": "Recherche", "label": "top_k = 3\narticles", "color": "blue" },
-    { "id": "llm", "group": "Génération", "label": "summarize_stream\nMistral/Ollama", "color": "orange" },
+    { "id": "llm", "group": "Génération", "label": "summarize_stream\nMistral/Ollama", "color": "blue" },
     { "id": "out", "group": "Sortie", "label": "VÉRIFICATION\nEXPLICATION\nSOURCES", "color": "green" }
   ],
   "edges": [

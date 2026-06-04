@@ -4,7 +4,7 @@
     { "id": "rag", "group": "Local", "label": "Texte RAG\n(buffer stream)", "color": "violet" },
     { "id": "chunk", "group": "Local", "label": "Découpage\nCHUNK_MAX 3800", "color": "grey" },
     { "id": "relay_req", "group": "Local", "label": "POST WHAPI_\nREPLY_RELAY_URL", "color": "blue" },
-    { "id": "vps", "group": "VPS", "label": "/webhooks/whapi/\nreply-relay", "color": "orange" },
+    { "id": "vps", "group": "VPS", "label": "/webhooks/whapi/\nreply-relay", "color": "blue" },
     { "id": "whapi_api", "group": "VPS", "label": "gate.whapi.cloud\nmessages/text", "color": "blue" },
     { "id": "wa", "group": "Utilisateur", "label": "WhatsApp\ndélivrance", "color": "green" }
   ],

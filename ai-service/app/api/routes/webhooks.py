@@ -953,7 +953,11 @@ async def process_whatsapp_message(
     if require_topic_gate:
         decision = await topic_gate_service.classify(query)
         if not decision.should_activate:
-            # ... (logique ignore existante) ...
+            logger.info(
+                "[Whapi] Message ignoré (topic gate) chat=%s raison=%s",
+                phone_number[:40] if len(phone_number) > 40 else phone_number,
+                getattr(decision, "reason", decision),
+            )
             return
 
     # 3. Exécution RAG (Normal, Raffiné ou Viral)
@@ -985,7 +989,10 @@ async def process_whatsapp_message(
             old_query = local_context.get("query", "Inconnue")
             old_verdict = local_context.get("verdict", "")
             reply_to_id = local_context.get("root_message_id")
-            
+            logger.info(
+                "[Whapi] RAG raffiné (mémoire locale) ancienne requête=%.60s",
+                old_query,
+            )
             rag_res = await rag_service.generate_refined_full_answer(
                 query=query,
                 old_query=old_query,
@@ -997,6 +1004,7 @@ async def process_whatsapp_message(
             body = f"💡 *Note* : Sujet déjà abordé ici. Mise à jour :\n\n{verdict}"
             
         else:
+            logger.info("[Whapi] RAG standard (nouvelle question)")
             rag_res = await rag_service.generate_full_answer(query, channel="whatsapp")
             verdict = rag_res.get("verdict", "")
             sources = rag_res.get("sources", [])
@@ -1007,9 +1015,14 @@ async def process_whatsapp_message(
             # ... (formatage sources existant) ...
             pass # (déjà géré dans les prompt viraux/raffinés normalement)
 
+        logger.info(
+            "[Whapi] Réponse prête (%s car.) — envoi WhatsApp",
+            len(body or ""),
+        )
         sent_message_id = await _send_whatsapp_long_body(
             phone_number, body, transport=transport, reply_to_id=reply_to_id
         )
+        logger.info("[Whapi] Message envoyé id=%s", sent_message_id or "(inconnu)")
 
         # Sauvegarde Mémoire (Locale & Globale via add_to_memory mise à jour)
         await memory_service.add_to_memory(

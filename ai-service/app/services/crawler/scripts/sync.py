@@ -19,6 +19,7 @@ from app.services.crawler.config import load_crawler_settings
 from app.services.crawler.http.http_client import SyncHttpClient
 from app.services.crawler.http.open_graph import OpenGraphParser
 from app.services.crawler.process.crawler import SyncCrawler
+from app.services.crawler.source_catalog import load_all_source_configs
 
 logging.basicConfig(
     level=logging.INFO,
@@ -59,12 +60,21 @@ def _is_probable_syndication_feed(markup: str) -> bool:
     )
 
 
-def _urls_from_feed_markup(markup: str) -> list[str]:
+def _feed_category_from_item(item) -> str | None:
+    cat_el = item.find("category")
+    if cat_el is None:
+        return None
+    text = (cat_el.string or cat_el.get_text(strip=True) or "").strip()
+    return text or None
+
+
+def _urls_from_feed_markup(markup: str) -> tuple[list[str], dict[str, str]]:
     """
     Extrait les URLs d'articles depuis un flux RSS 2, Atom, ou RDF (ex. DW).
+    Retourne aussi les catégories RSS par URL quand présentes.
     """
     if not _is_probable_syndication_feed(markup):
-        return []
+        return [], {}
     from bs4 import BeautifulSoup
 
     try:
@@ -73,6 +83,7 @@ def _urls_from_feed_markup(markup: str) -> list[str]:
         soup = BeautifulSoup(markup, "lxml")
 
     urls: list[str] = []
+    hints: dict[str, str] = {}
     for item in soup.find_all("item"):
         link_el = item.find("link")
         href = ""
@@ -86,72 +97,46 @@ def _urls_from_feed_markup(markup: str) -> list[str]:
                     href = t
         if href.startswith("http") and href not in urls:
             urls.append(href)
+            cat = _feed_category_from_item(item)
+            if cat:
+                hints[href] = cat
 
     if not urls:
         for entry in soup.find_all("entry"):
+            href = ""
             for link_el in entry.find_all("link"):
                 href = (link_el.get("href") or "").strip()
                 if href.startswith("http"):
-                    urls.append(href)
                     break
-    return urls
+            if href.startswith("http") and href not in urls:
+                urls.append(href)
+                cat_el = entry.find("category")
+                if cat_el is not None:
+                    label = (cat_el.get("term") or cat_el.string or cat_el.get_text(strip=True) or "").strip()
+                    if label:
+                        hints[href] = label
+    return urls, hints
 
 
-def _load_sources_from_file(path: Path = SOURCES_FILE) -> dict:
-    if not path.exists():
-        return {}
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-        sources = {}
-        for item in data.get("sources", {}).get("html", []):
-            source_id = item.get("sourceId")
-            if not source_id:
-                continue
-            base_url = item.get("sourceUrl", "").rstrip("/")
-            pagination = (item.get("paginationTemplate") or "").lstrip("/")
-            listing_url = f"{base_url}/{pagination}" if pagination else base_url
-            selector = item.get("sourceSelectors", {}).get("articleLink") or "a"
-            sources[source_id] = {
-                "base_url": base_url,
-                "listing_url": listing_url,
-                "article_selector": selector,
-                "categories": item.get("categories"),
-                "supports_categories": item.get("supportsCategories", False),
-            }
-        # WordPress entries have no selectors; still include so we can hit their feed endpoints later if needed
-        for item in data.get("sources", {}).get("wordpress", []):
-            source_id = item.get("sourceId")
-            if not source_id:
-                continue
-            base_url = item.get("sourceUrl", "").rstrip("/")
-            rss_url = (item.get("rssUrl") or "").strip()
-            fp = item.get("feedPath")
-            if fp is None or str(fp).strip() == "":
-                feed_suffix = "/feed"
-            else:
-                fp_s = str(fp).strip()
-                feed_suffix = fp_s if fp_s.startswith("/") else f"/{fp_s}"
-            listing_url = rss_url if rss_url else f"{base_url}{feed_suffix}"
-            sources[source_id] = {
-                "base_url": base_url,
-                "listing_url": listing_url,
-                "article_selector": "a",
-                "categories": None,
-                "supports_categories": False,
-            }
-        return sources
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Impossible de charger %s: %s", path, exc)
-        return {}
+def _known_sources_dict() -> dict:
+    """Compatibilité avec l'ancien dict KNOWN_SOURCES (tests / overrides locaux)."""
+    out = dict(KNOWN_SOURCES)
+    for sid, cfg in load_all_source_configs().items():
+        out[sid] = {
+            "base_url": cfg.base_url,
+            "listing_url": cfg.listing_url,
+            "article_selector": cfg.article_link_selector,
+            "categories": list(cfg.listing_categories) or None,
+            "supports_categories": cfg.supports_listing_categories,
+            "article_categories_selector": cfg.article_categories_selector,
+        }
+    return out
 
 
-# Fusionne les sources du JSON avec les sources codées
-KNOWN_SOURCES.update(_load_sources_from_file())
-
-
-def get_article_urls(source_id: str, page_range: Optional[str], limit: Optional[int]) -> list[str]:
-    """Récupère la liste d'URLs d'articles à crawler."""
+def get_article_urls(
+    source_id: str, page_range: Optional[str], limit: Optional[int]
+) -> tuple[list[str], dict[str, str]]:
+    """Récupère les URLs à crawler et les catégories connues (liste / flux RSS)."""
     from bs4 import BeautifulSoup
     from app.services.crawler.config import load_crawler_settings
     from app.services.crawler.http.http_client import SyncHttpClient
@@ -159,9 +144,10 @@ def get_article_urls(source_id: str, page_range: Optional[str], limit: Optional[
     settings = load_crawler_settings()
     client = SyncHttpClient(settings.http)
 
-    source = KNOWN_SOURCES.get(source_id)
+    sources = _known_sources_dict()
+    source = sources.get(source_id)
     if not source:
-        logger.error("Source inconnue: %s. Sources disponibles: %s", source_id, list(KNOWN_SOURCES.keys()))
+        logger.error("Source inconnue: %s. Sources disponibles: %s", source_id, list(sources.keys()))
         sys.exit(1)
 
     start_page, end_page = 1, 3
@@ -170,19 +156,19 @@ def get_article_urls(source_id: str, page_range: Optional[str], limit: Optional[
         start_page = int(parts[0])
         end_page = int(parts[1]) if len(parts) > 1 else start_page
 
-    urls = []
+    urls: list[str] = []
+    url_categories: dict[str, str] = {}
     base_url = source["base_url"]
     listing_url = source["listing_url"]
     selector = source.get("article_selector") or "a"
-    categories = source.get("categories") if source.get("supports_categories") else [None]
+    listing_cats = source.get("categories") if source.get("supports_categories") else [None]
 
-    for category in categories or [None]:
+    for category in listing_cats or [None]:
         for page in range(start_page, end_page + 1):
             try:
-                # Si paginationTemplate contient {category}, on l'a déjà injecté lors du build; sinon, on utilise query param
                 page_url = listing_url
                 if category:
-                    page_url = listing_url.replace("{category}", category)
+                    page_url = listing_url.replace("{category}", str(category))
                 page_url = page_url if page == 1 else f"{page_url}?page={page}"
 
                 logger.info("Fetching listing page %d: %s", page, page_url)
@@ -198,12 +184,17 @@ def get_article_urls(source_id: str, page_range: Optional[str], limit: Optional[
                     if full_url not in page_urls:
                         page_urls.append(full_url)
 
+                feed_hints: dict[str, str] = {}
                 if not page_urls:
-                    page_urls = _urls_from_feed_markup(text)
+                    page_urls, feed_hints = _urls_from_feed_markup(text)
 
                 for full_url in page_urls:
                     if full_url not in urls:
                         urls.append(full_url)
+                    if category and full_url not in url_categories:
+                        url_categories[full_url] = str(category)
+                    if full_url in feed_hints and full_url not in url_categories:
+                        url_categories[full_url] = feed_hints[full_url]
 
                 if limit and len(urls) >= limit:
                     urls = urls[:limit]
@@ -213,8 +204,8 @@ def get_article_urls(source_id: str, page_range: Optional[str], limit: Optional[
                 logger.warning("Erreur page %d: %s", page, exc)
                 continue
 
-    logger.info("Total URLs trouvées: %d", len(urls))
-    return urls
+    logger.info("Total URLs trouvées: %d (%d avec catégorie liste/RSS)", len(urls), len(url_categories))
+    return urls, url_categories
 
 
 def main() -> int:
@@ -233,17 +224,22 @@ def main() -> int:
         logger.info("Data dir: %s", settings.data_dir)
         logger.info("Backend: %s", settings.backend_endpoint or "non configuré (JSONL seulement)")
 
-        source_ids = list(KNOWN_SOURCES.keys()) if args.source_id == "all" else [args.source_id]
+        all_sources = _known_sources_dict()
+        source_ids = list(all_sources.keys()) if args.source_id == "all" else [args.source_id]
 
         total_articles = 0
         for sid in source_ids:
             logger.info("--- Source: %s ---", sid)
-            urls = get_article_urls(sid, args.page_range, args.limit)
+            urls, url_categories = get_article_urls(sid, args.page_range, args.limit)
             if not urls:
                 logger.warning("Aucune URL trouvée pour la source %s", sid)
                 continue
             crawler = SyncCrawler(settings=settings)
-            articles = crawler.crawl_urls(urls, source_id=sid)
+            articles = crawler.crawl_urls(
+                urls,
+                source_id=sid,
+                url_listing_categories=url_categories,
+            )
             logger.info("=== Terminé: %d articles crawlés pour %s ===", len(articles), sid)
             logger.info("Fichier JSONL: %s/%s.jsonl", settings.data_dir, sid)
             total_articles += len(articles)

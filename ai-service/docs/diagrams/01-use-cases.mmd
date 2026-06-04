@@ -1,19 +1,23 @@
-flowchart LR
-    U[Utilisateur]
-    A[Administrateur]
+%% Aligné sur thesis/figures/01-use-cases.mmd et Chapitre III § 3.3
 
-    subgraph S[RDC_News_Intelligence]
-        UC1[Consulter_reponse_RAG]
-        UC2[Verifier_image_rumeur]
-        UC3[Rechercher_articles_similaires]
-        UC4[Lancer_crawl]
-        UC5[Indexer_articles]
-    end
+useCaseDiagram
+    actor "Utilisateur\n(messagerie)" as UMsg
+    actor Administrateur as Admin
+    actor "Passerelle\nWhapi / Telegram" as GW
 
-    U --> UC1
-    U --> UC2
-    U --> UC3
-    A --> UC4
-    A --> UC5
-    UC1 --> UC3
-    UC2 --> UC1
+    rectangle "RDC News Intelligence" {
+        usecase UC1 as "Soumettre une information\nà vérifier"
+        usecase UC2 as "Recevoir un verdict\ncontextualisé"
+        usecase UC3 as "Réponse non redondante\n(mémoire Redis)"
+        usecase UC4 as "Mettre à jour la base\ndocumentaire"
+        usecase UC5 as "Superviser l'état\ndu service"
+    }
+
+    UMsg --> UC1
+    GW --> UC1
+    UMsg --> UC2
+    UMsg --> UC3
+    Admin --> UC4
+    Admin --> UC5
+
+    UC3 ..> UC2 : <<extend>>

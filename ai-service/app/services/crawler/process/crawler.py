@@ -10,7 +10,8 @@ from app.services.crawler.http.http_client import HttpError, SyncHttpClient
 from app.services.crawler.http.open_graph import OpenGraphParser
 from app.services.crawler.models import Article
 from app.services.crawler.process.persistence import BackendForwarder, JsonlPersistor
-from app.services.crawler.utils import make_hash, sanitize_text, infer_categories
+from app.services.crawler.source_catalog import get_source_config
+from app.services.crawler.utils import make_hash, sanitize_text, resolve_article_categories
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +29,25 @@ class SyncCrawler:
         self.http_client = http_client or SyncHttpClient(self.settings.http)
         self.og_parser = og_parser or OpenGraphParser()
 
-    def crawl_urls(self, urls: Iterable[str], source_id: str) -> List[Article]:
+    def crawl_urls(
+        self,
+        urls: Iterable[str],
+        source_id: str,
+        *,
+        url_listing_categories: dict[str, str] | None = None,
+    ) -> List[Article]:
         persist = JsonlPersistor(self.settings.data_dir, source_id)
         forwarder = BackendForwarder(self.settings)
         collected: List[Article] = []
+        hints = url_listing_categories or {}
 
         for url in urls:
             try:
-                article = self._process_single(url, source_id)
+                article = self._process_single(
+                    url,
+                    source_id,
+                    listing_category=hints.get(url),
+                )
                 if not article:
                     continue
                 persist.persist(article)
@@ -50,7 +62,13 @@ class SyncCrawler:
         forwarder.close()
         return collected
 
-    def _process_single(self, url: str, source_id: str) -> Article | None:
+    def _process_single(
+        self,
+        url: str,
+        source_id: str,
+        *,
+        listing_category: str | None = None,
+    ) -> Article | None:
         response = self.http_client.get(url)
         html = response.text
         soup = BeautifulSoup(html, "lxml")
@@ -63,12 +81,20 @@ class SyncCrawler:
             logger.debug("Skipping %s because no body was extracted", url)
             return None
 
+        src_cfg = get_source_config(source_id)
+        cat_selector = src_cfg.article_categories_selector if src_cfg else None
+
         article = Article(
             source_id=source_id,
             link=url,
             title=sanitize_text(title) or url,
             body=body,
-            categories=infer_categories(url),
+            categories=resolve_article_categories(
+                url,
+                soup,
+                css_selector=cat_selector,
+                listing_category=listing_category,
+            ),
             hash=make_hash(url),
             metadata=metadata,
         )

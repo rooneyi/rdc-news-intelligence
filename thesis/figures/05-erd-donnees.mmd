@@ -1,0 +1,69 @@
+%% Figure — ERD / architecture des données (Chapitre III § 3.5 + stockage)
+%% Pas de colonne embedding dans PostgreSQL (vecteurs = ChromaDB uniquement)
+%% Export : mermaid.live → thesis/figures/fig-erd-donnees.png
+
+erDiagram
+    SOURCES_CATALOGUE {
+        string sourceId PK "sources.json (hors SQL)"
+        string source_url
+        string source_kind "RSS / HTML"
+        string source_lang
+    }
+
+    ARTICLES {
+        int id PK "SERIAL"
+        text title "NOT NULL"
+        text content "NOT NULL"
+        text source_id "FK logique"
+        text link "UNIQUE"
+        text hash "UNIQUE"
+        text_array categories
+        text image
+        timestamp created_at
+    }
+
+    TRAINING_RUNS {
+        int id PK "journal sync / train"
+        timestamp started_at
+        timestamp ended_at
+        text status
+        text model_name
+        int processed_count
+        int reembedded_count
+        text note
+    }
+
+    CHROMA_ARTICLES_RDC {
+        string id PK "= articles.id"
+        float_vector embedding "384D cosine"
+        text document
+        string metadata_title
+        string metadata_link
+        string metadata_source_id
+    }
+
+    REDIS_CHAT_HISTORY {
+        string key PK "chat_history:{chat_id}"
+        set msg_hashes
+        int ttl_seconds
+    }
+
+    REDIS_MSG_DATA {
+        string key PK "msg_data:{hash}"
+        json query
+        json embedding
+        json verdict
+        json sources
+        int occurrence_count
+    }
+
+    REDIS_GLOBAL_TOPICS {
+        string key PK "global_topics_index"
+        hash topics
+        int group_count
+    }
+
+    SOURCES_CATALOGUE ||--o{ ARTICLES : "source_id"
+    ARTICLES ||--|| CHROMA_ARTICLES_RDC : "upsert 1:1"
+    REDIS_CHAT_HISTORY ||--o{ REDIS_MSG_DATA : "smembers"
+    REDIS_GLOBAL_TOPICS ||--o{ REDIS_MSG_DATA : "global_topic_id"

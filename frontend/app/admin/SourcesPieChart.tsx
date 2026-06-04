@@ -38,10 +38,14 @@ function donutWedgePath(aStart: number, aEnd: number): string {
   ].join(" ");
 }
 
-function hsl(i: number, orphan: boolean): string {
+/** Teintes bleu → indigo uniquement (pas de jaune/orange sur la roue oklch). */
+const SLICE_HUES = [235, 250, 265, 220, 245, 275, 230, 255];
+
+function sliceColor(i: number, orphan: boolean): string {
   if (orphan) return "oklch(0.55 0.02 260)";
-  const h = (i * 47 + 210) % 360;
-  return `oklch(0.72 0.14 ${h})`;
+  const h = SLICE_HUES[i % SLICE_HUES.length];
+  const l = 0.7 - (i % 3) * 0.04;
+  return `oklch(${l} 0.13 ${h})`;
 }
 
 type Slice = { label: string; count: number; fraction: number; orphan: boolean };
@@ -87,7 +91,7 @@ export function SourcesPieChart({ breakdown, loading }: Props) {
       const sweep = sl.fraction * Math.PI * 2;
       const nextAngle = angle - sweep;
       const path = donutWedgePath(angle, nextAngle);
-      const seg = { path, color: hsl(i, sl.orphan), label: sl.label, count: sl.count, idx: i };
+      const seg = { path, color: sliceColor(i, sl.orphan), label: sl.label, count: sl.count, idx: i };
       angle = nextAngle;
       return seg;
     });
