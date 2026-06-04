@@ -128,3 +128,9 @@ Les URLs internes VPS restent en local :
 WHAPI_QUEUE_POP_URL=http://127.0.0.1:8000/webhooks/whapi/queue/pop
 WHAPI_REPLY_RELAY_URL=http://127.0.0.1:8000/webhooks/whapi/reply-relay
 ```
+
+## Frontend Next.js (autre domaine → port 3000)
+
+Créez un **second domaine** Hestia (ex. `app.rooney-rdc.rooneykalumba.tech`) qui proxifie tout vers `127.0.0.1:3000`, sans toucher au domaine API.
+
+Guide : [`frontend/docs/hestia-nextjs-domaine.md`](../../frontend/docs/hestia-nextjs-domaine.md).
