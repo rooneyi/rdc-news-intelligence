@@ -3,7 +3,17 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Activity, Database, Globe, LogOut, RefreshCw, Server, Shield, Zap } from "lucide-react";
+import {
+  Activity,
+  Database,
+  Globe,
+  LogOut,
+  Play,
+  RefreshCw,
+  Server,
+  Shield,
+  Zap,
+} from "lucide-react";
 import { useAdminBranding } from "@/app/admin/admin-branding-context";
 import { SourcesPieChart } from "../SourcesPieChart";
 
@@ -30,6 +40,11 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [crawlerJob, setCrawlerJob] = useState<CrawlerJob | null>(null);
+  const [crawlLimit, setCrawlLimit] = useState(30);
+  const [crawlReembed, setCrawlReembed] = useState(true);
+  const [crawlerStarting, setCrawlerStarting] = useState(false);
+  const [crawlerError, setCrawlerError] = useState<string | null>(null);
 
   const logout = useCallback(async () => {
     await fetch("/api/admin/logout", { method: "POST" });
@@ -62,9 +77,78 @@ export default function AdminPage() {
     }
   }, [router]);
 
+  const loadCrawlerStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/fastapi/admin/crawler", { cache: "no-store" });
+      const payload = await res.json();
+      if (res.status === 401) {
+        router.push("/admin/login");
+        return;
+      }
+      if (!res.ok) return;
+      const job = payload?.job as CrawlerJob | undefined;
+      if (job) setCrawlerJob(job);
+    } catch {
+      /* ignore polling errors */
+    }
+  }, [router]);
+
+  const startCrawler = useCallback(async () => {
+    setCrawlerStarting(true);
+    setCrawlerError(null);
+    try {
+      const res = await fetch("/api/fastapi/admin/crawler", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_id: "all",
+          limit: crawlLimit,
+          run_reembedding: crawlReembed,
+        }),
+      });
+      const payload = await res.json();
+      if (res.status === 401) {
+        router.push("/admin/login");
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(
+          typeof payload?.error === "string"
+            ? payload.error
+            : "Impossible de démarrer le crawl.",
+        );
+      }
+      const job = payload?.job as CrawlerJob | undefined;
+      if (job) {
+        setCrawlerJob({ ...job, running: true, status: "running", message: "Collecte en cours…" });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erreur inconnue.";
+      setCrawlerError(message);
+    } finally {
+      setCrawlerStarting(false);
+    }
+  }, [router, crawlLimit, crawlReembed]);
+
   useEffect(() => {
     void loadOverview();
-  }, [loadOverview]);
+    void loadCrawlerStatus();
+  }, [loadOverview, loadCrawlerStatus]);
+
+  useEffect(() => {
+    if (!crawlerJob?.running) return;
+    const id = window.setInterval(() => {
+      void loadCrawlerStatus();
+    }, 4000);
+    return () => window.clearInterval(id);
+  }, [crawlerJob?.running, loadCrawlerStatus]);
+
+  useEffect(() => {
+    if (crawlerJob?.running) return;
+    if (crawlerJob?.status === "success") {
+      void loadOverview(true);
+    }
+  }, [crawlerJob?.running, crawlerJob?.status, loadOverview]);
 
   const cards = useMemo(
     () => [
@@ -149,6 +233,85 @@ export default function AdminPage() {
             <p className="text-2xl font-semibold text-slate-100">{s.value}</p>
           </article>
         ))}
+      </section>
+
+      <section className="rdc-card mb-4 rounded-2xl p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-200">Collecte des sources (crawler)</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Lance le même pipeline que le cron (toutes les sources, limite par source), puis le
+              re-embedding si activé.
+            </p>
+          </div>
+          {crawlerJob?.running ? (
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/30 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-200">
+              <RefreshCw size={12} className="animate-spin" /> En cours…
+            </span>
+          ) : crawlerJob?.status === "success" ? (
+            <span className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-200">
+              Dernier crawl : OK
+            </span>
+          ) : crawlerJob?.status === "error" ? (
+            <span className="rounded-lg border border-red-400/30 bg-red-500/10 px-2.5 py-1 text-xs text-red-200">
+              Dernier crawl : erreur
+            </span>
+          ) : null}
+        </div>
+
+        {crawlerError && (
+          <div className="mb-3 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+            {crawlerError}
+          </div>
+        )}
+
+        {crawlerJob?.message && !crawlerJob.running ? (
+          <p className="mb-3 text-xs text-slate-400">{crawlerJob.message}</p>
+        ) : null}
+        {crawlerJob?.error ? (
+          <p className="mb-3 text-xs text-red-300">{crawlerJob.error}</p>
+        ) : null}
+
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-xs text-slate-400">
+            Articles max / source
+            <select
+              value={crawlLimit}
+              onChange={(e) => setCrawlLimit(Number(e.target.value))}
+              disabled={crawlerJob?.running || crawlerStarting}
+              className="rounded-lg border border-slate-600/40 bg-slate-900/60 px-3 py-2 text-sm text-slate-200"
+            >
+              {[10, 20, 30, 50, 100].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 pb-2 text-xs text-slate-300">
+            <input
+              type="checkbox"
+              checked={crawlReembed}
+              onChange={(e) => setCrawlReembed(e.target.checked)}
+              disabled={crawlerJob?.running || crawlerStarting}
+              className="rounded border-slate-500"
+            />
+            Re-embedding après crawl
+          </label>
+          <button
+            type="button"
+            onClick={() => void startCrawler()}
+            disabled={crawlerJob?.running || crawlerStarting}
+            className="rdc-btn-primary inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Play size={14} />
+            {crawlerStarting
+              ? "Démarrage…"
+              : crawlerJob?.running
+                ? "Crawl en cours…"
+                : "Lancer le crawl"}
+          </button>
+        </div>
       </section>
 
       <section className="rdc-card rounded-2xl p-4">

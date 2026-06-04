@@ -10,6 +10,26 @@ from app.services.embedding_service import EmbeddingService
 
 logger = logging.getLogger(__name__)
 
+
+def conversational_memory_enabled() -> bool:
+    """Désactivé par défaut : chaque message repasse par le RAG standard (comportement d’origine)."""
+    return os.getenv("CONVERSATIONAL_MEMORY_ENABLED", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def inbound_message_dedup_enabled() -> bool:
+    return os.getenv("WHATSAPP_DEDUP_INBOUND", "true").lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
 class ConversationalMemoryService:
     """
     Service de mémoire conversationnelle basé sur Redis (Asynchrone).
@@ -20,7 +40,34 @@ class ConversationalMemoryService:
         self.redis_client = redis.from_url(REDIS_URL, decode_responses=True)
         self.embedding_service = EmbeddingService()
         self.ttl = int(os.getenv("MEMORY_TTL_SECONDS", "3600"))  # 1 heure par défaut
-        self.similarity_threshold = float(os.getenv("MEMORY_SIMILARITY_THRESHOLD", "0.85"))
+        self.similarity_threshold = float(os.getenv("MEMORY_SIMILARITY_THRESHOLD", "0.92"))
+        self.inbound_dedup_ttl = int(os.getenv("WHATSAPP_INBOUND_DEDUP_TTL_SECONDS", "86400"))
+
+    async def claim_inbound_message(self, platform: str, message_id: str | None) -> bool:
+        """
+        Retourne True si le message peut être traité (première fois).
+        Évite les doubles réponses (webhook + file, retries Whapi, etc.).
+        """
+        if not inbound_message_dedup_enabled() or not message_id:
+            return True
+        key = f"inbound_done:{platform}:{message_id.strip()}"
+        try:
+            claimed = await self.redis_client.set(
+                key,
+                "1",
+                nx=True,
+                ex=self.inbound_dedup_ttl,
+            )
+            if not claimed:
+                logger.info(
+                    "[Dedup] Message déjà traité (%s, id=%s)",
+                    platform,
+                    message_id[:40],
+                )
+            return bool(claimed)
+        except Exception as e:
+            logger.error("[Dedup] Erreur claim_inbound_message: %s", e)
+            return True
 
     def _get_chat_key(self, chat_id: str) -> str:
         return f"chat_history:{chat_id}"
@@ -41,6 +88,8 @@ class ConversationalMemoryService:
         platform_message_id: Optional[str] = None
     ):
         """Ajoute un message à la mémoire locale et à l'index global des bulles."""
+        if not conversational_memory_enabled():
+            return
         try:
             import hashlib
             msg_hash = hashlib.md5(query.encode('utf-8')).hexdigest()
@@ -111,6 +160,8 @@ class ConversationalMemoryService:
 
     async def search_global_similar(self, query_embedding: List[float]) -> Optional[Dict[str, Any]]:
         """Recherche si un sujet similaire existe n'importe où dans le pays (tous les groupes)."""
+        if not conversational_memory_enabled():
+            return None
         try:
             global_key = self._get_global_index_key()
             all_topics = await self.redis_client.hgetall(global_key)
@@ -136,6 +187,8 @@ class ConversationalMemoryService:
 
     async def search_similar(self, chat_id: str, query_embedding: List[float]) -> Optional[Dict[str, Any]]:
         """Recherche un message similaire dans l'historique récent du chat."""
+        if not conversational_memory_enabled():
+            return None
         try:
             chat_key = self._get_chat_key(chat_id)
             msg_hashes = await self.redis_client.smembers(chat_key)

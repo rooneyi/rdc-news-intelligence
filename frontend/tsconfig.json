@@ -148,7 +148,9 @@
     "/tmp/rdc-next-dev-25483/types/**/*.ts",
     "/tmp/rdc-next-dev-25483/dev/types/**/*.ts",
     "/tmp/rdc-next-dev-46710/types/**/*.ts",
-    "/tmp/rdc-next-dev-46710/dev/types/**/*.ts"
+    "/tmp/rdc-next-dev-46710/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-139133/types/**/*.ts",
+    "/tmp/rdc-next-dev-139133/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

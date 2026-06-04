@@ -12,8 +12,14 @@ from app.services.load_dataset import load_and_insert
 from app.schemas.article import ArticleCreate, ArticleOut, RAGRequest, RAGResponse
 from app.services.crawler.models import Article as CrawlerArticle
 from app.db.session import get_db
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
+
+from app.services.crawler.admin_runner import (
+    get_crawler_job_state,
+    is_crawler_running,
+    schedule_crawler_job,
+)
 import os
 
 from app.services.vector_store_service import VectorStoreService
@@ -259,6 +265,46 @@ async def rag_query_stream(payload: RAGRequest):
 
 class LoadRequest(BaseModel):
     limit: Optional[int] = None
+
+
+class CrawlerRunRequest(BaseModel):
+    source_id: str = Field(default="all", description="ID source ou « all »")
+    limit: int = Field(default=30, ge=1, le=200)
+    page_range: Optional[str] = Field(
+        default=None,
+        description="Plage de pages listing, ex. 1:3",
+    )
+    run_reembedding: bool = Field(
+        default=True,
+        description="Lancer le re-embedding Chroma après le crawl",
+    )
+
+
+@router.get("/admin/crawler/status", summary="État du dernier crawl admin", tags=["Admin"])
+def admin_crawler_status():
+    return {"status": "ok", "job": get_crawler_job_state()}
+
+
+@router.post("/admin/crawler/run", summary="Lancer le crawler (admin)", tags=["Admin"])
+def admin_crawler_run(payload: CrawlerRunRequest):
+    if is_crawler_running():
+        raise HTTPException(
+            status_code=409,
+            detail="Un crawl est déjà en cours. Consultez GET /admin/crawler/status.",
+        )
+    if not schedule_crawler_job(
+        source_id=payload.source_id.strip() or "all",
+        limit=payload.limit,
+        page_range=(payload.page_range or "").strip() or None,
+        run_reembedding_after=payload.run_reembedding,
+        trigger="admin",
+    ):
+        raise HTTPException(status_code=409, detail="Impossible de démarrer le crawl.")
+    return {
+        "status": "started",
+        "message": "Crawl démarré en arrière-plan.",
+        "job": get_crawler_job_state(),
+    }
 
 
 @router.get("/admin/overview", summary="Admin overview stats", tags=["Admin"])
