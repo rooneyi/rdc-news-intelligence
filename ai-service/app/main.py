@@ -198,10 +198,13 @@ async def health_check():
     Toujours disponible si ce module se charge.
     `ready: false` indique que le bootstrap complet (RAG, webhooks) a échoué — voir `error`.
     """
+    from app.services.ocr_service import OCRService
+
     body: dict = {
         "status": "ok",
         "service": "rdc-ai-service",
         "ready": app.state.bootstrap_ok,
+        "ocr_tesseract": OCRService.is_tesseract_available(),
     }
     if app.state.bootstrap_error:
         body["error"] = app.state.bootstrap_error
