@@ -15,9 +15,13 @@ from app.db.session import get_db
 from pydantic import BaseModel, Field
 from typing import Optional, List
 
+from app.services.admin_maintenance_runner import (
+    get_maintenance_job_state,
+    is_admin_busy,
+    schedule_maintenance_job,
+)
 from app.services.crawler.admin_runner import (
     get_crawler_job_state,
-    is_crawler_running,
     schedule_crawler_job,
 )
 import os
@@ -280,6 +284,32 @@ class CrawlerRunRequest(BaseModel):
     )
 
 
+class ReembedRunRequest(BaseModel):
+    force_all: bool = Field(
+        default=False,
+        description="Re-indexer tout le corpus vers Chroma (après changement BDD)",
+    )
+    only_without_category: bool = Field(
+        default=False,
+        description="Limiter le re-embedding aux articles sans catégories",
+    )
+    backfill_categories_first: bool = Field(
+        default=True,
+        description="Remplir les catégories manquantes (URL) avant le re-embedding",
+    )
+    category_limit: int = Field(
+        default=0,
+        ge=0,
+        le=50000,
+        description="Max articles pour le backfill catégories (0 = tous)",
+    )
+    fetch_html_for_categories: bool = Field(
+        default=False,
+        description="Re-télécharger les pages pour les catégories (lent)",
+    )
+    batch_size: int = Field(default=50, ge=1, le=200)
+
+
 @router.post("/admin/memory/flush", summary="Vider la mémoire conversationnelle Redis", tags=["Admin"])
 async def admin_memory_flush():
     from app.services.memory_service import ConversationalMemoryService
@@ -294,12 +324,42 @@ def admin_crawler_status():
     return {"status": "ok", "job": get_crawler_job_state()}
 
 
-@router.post("/admin/crawler/run", summary="Lancer le crawler (admin)", tags=["Admin"])
-def admin_crawler_run(payload: CrawlerRunRequest):
-    if is_crawler_running():
+@router.get("/admin/reembed/status", summary="État du job re-embedding / maintenance", tags=["Admin"])
+def admin_reembed_status():
+    return {"status": "ok", "job": get_maintenance_job_state()}
+
+
+@router.post("/admin/reembed/run", summary="Re-embedding Chroma + catégories (admin)", tags=["Admin"])
+def admin_reembed_run(payload: ReembedRunRequest):
+    if is_admin_busy():
         raise HTTPException(
             status_code=409,
-            detail="Un crawl est déjà en cours. Consultez GET /admin/crawler/status.",
+            detail="Un job admin est déjà en cours (crawl ou maintenance). "
+            "Consultez GET /admin/crawler/status ou /admin/reembed/status.",
+        )
+    if not schedule_maintenance_job(
+        force_all=payload.force_all,
+        only_without_category=payload.only_without_category,
+        backfill_categories_first=payload.backfill_categories_first,
+        category_limit=payload.category_limit,
+        fetch_html_for_categories=payload.fetch_html_for_categories,
+        batch_size=payload.batch_size,
+        trigger="admin",
+    ):
+        raise HTTPException(status_code=409, detail="Impossible de démarrer la maintenance.")
+    return {
+        "status": "started",
+        "message": "Maintenance démarrée en arrière-plan.",
+        "job": get_maintenance_job_state(),
+    }
+
+
+@router.post("/admin/crawler/run", summary="Lancer le crawler (admin)", tags=["Admin"])
+def admin_crawler_run(payload: CrawlerRunRequest):
+    if is_admin_busy():
+        raise HTTPException(
+            status_code=409,
+            detail="Un job admin est déjà en cours. Consultez GET /admin/crawler/status.",
         )
     if not schedule_crawler_job(
         source_id=payload.source_id.strip() or "all",
@@ -397,6 +457,14 @@ def admin_overview():
         )
         missing_link = int(cur.fetchone()[0] or 0)
 
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM articles
+            WHERE categories IS NULL OR cardinality(categories) = 0
+            """
+        )
+        without_category = int(cur.fetchone()[0] or 0)
+
         return {
             "status": "ok",
             "stats": {
@@ -409,6 +477,7 @@ def admin_overview():
                 else 0.0,
                 "missing_source_articles": missing_source,
                 "missing_link_articles": missing_link,
+                "articles_without_category": without_category,
             },
             "top_sources": top_sources,
             "sources_breakdown": breakdown,

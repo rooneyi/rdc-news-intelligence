@@ -95,7 +95,12 @@ def execute_crawler_job(
     trigger: str = "admin",
 ) -> None:
     """Tâche longue (thread ou BackgroundTasks FastAPI)."""
+    from app.services.admin_maintenance_runner import is_maintenance_running
+
     global _state
+    if is_maintenance_running():
+        logger.warning("[%s] Crawl ignoré : maintenance en cours", trigger)
+        return
     with _lock:
         if _state.running:
             logger.warning("[%s] Crawl ignoré : job déjà en cours", trigger)
@@ -156,6 +161,10 @@ def schedule_crawler_job(
     trigger: str = "admin",
 ) -> bool:
     """Démarre le job en arrière-plan. Retourne False si un job tourne déjà."""
+    from app.services.admin_maintenance_runner import is_maintenance_running
+
+    if is_maintenance_running():
+        return False
     with _lock:
         if _state.running:
             return False

@@ -42,23 +42,47 @@ def _finish_run(cur, run_id: int, processed: int, reembedded: int, status: str, 
     )
 
 
-def run_reembedding(batch_size: int = 50, force_all: bool = False, model_name: Optional[str] = None) -> dict:
-    """Re-embed les articles nouveaux (ou tous si force_all) et synchronise ChromaDB."""
+def run_reembedding(
+    batch_size: int = 50,
+    force_all: bool = False,
+    model_name: Optional[str] = None,
+    *,
+    only_without_category: bool = False,
+) -> dict:
+    """Re-embed les articles et synchronise ChromaDB.
+
+    - ``force_all`` : tout le corpus (après changement BDD / reset Chroma).
+    - ``only_without_category`` : uniquement articles sans ``categories`` (combinable avec force_all).
+    - Sinon : articles créés depuis le dernier run réussi.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
-    
+
     model_to_use = model_name or EmbeddingService.DATASET_MODEL
-    run_id = _start_run(cur, model_to_use, "re-embedding (ChromaDB)")
+    note = "re-embedding (ChromaDB)"
+    if force_all:
+        note += " [tous]"
+    if only_without_category:
+        note += " [sans catégorie]"
+    run_id = _start_run(cur, model_to_use, note)
     conn.commit()
 
     processed = 0
     reembedded = 0
     try:
-        # 1. On récupère les articles avec leurs metadata pour ChromaDB
         cutoff = None if force_all else _get_last_success_timestamp(cur)
         query = "SELECT id, title, content, link, source_id, hash, categories, image FROM articles"
+        clauses: list[str] = []
+        params: list = []
         if cutoff:
-            cur.execute(query + " WHERE created_at > %s", (cutoff,))
+            clauses.append("created_at > %s")
+            params.append(cutoff)
+        if only_without_category:
+            clauses.append("(categories IS NULL OR cardinality(categories) = 0)")
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        if params:
+            cur.execute(query, tuple(params))
         else:
             cur.execute(query)
         

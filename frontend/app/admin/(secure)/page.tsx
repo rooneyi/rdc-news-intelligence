@@ -7,11 +7,13 @@ import {
   Activity,
   Database,
   Globe,
+  Layers,
   LogOut,
   Play,
   RefreshCw,
   Server,
   Shield,
+  Tags,
   Zap,
 } from "lucide-react";
 import { useAdminBranding } from "@/app/admin/admin-branding-context";
@@ -27,6 +29,7 @@ type AdminOverview = {
     embedding_coverage: number;
     missing_source_articles: number;
     missing_link_articles: number;
+    articles_without_category?: number;
   };
   top_sources: Array<{ source: string; count: number }>;
   sources_breakdown: Array<{ source: string; count: number; in_catalog?: boolean }>;
@@ -46,6 +49,19 @@ type CrawlerJob = {
   error: string | null;
 };
 
+type MaintenanceJob = {
+  running: boolean;
+  status: string;
+  job_type: string;
+  force_all: boolean;
+  only_without_category: boolean;
+  backfill_categories_first: boolean;
+  categories_result?: { scanned?: number; updated?: number; skipped?: number } | null;
+  reembed_result?: { processed?: number; reembedded?: number } | null;
+  message: string;
+  error: string | null;
+};
+
 export default function AdminPage() {
   const { appName, adminEmail } = useAdminBranding();
   const router = useRouter();
@@ -58,6 +74,15 @@ export default function AdminPage() {
   const [crawlReembed, setCrawlReembed] = useState(true);
   const [crawlerStarting, setCrawlerStarting] = useState(false);
   const [crawlerError, setCrawlerError] = useState<string | null>(null);
+  const [maintenanceJob, setMaintenanceJob] = useState<MaintenanceJob | null>(null);
+  const [reembedForceAll, setReembedForceAll] = useState(false);
+  const [reembedOnlyNoCategory, setReembedOnlyNoCategory] = useState(false);
+  const [reembedBackfillCategories, setReembedBackfillCategories] = useState(true);
+  const [reembedFetchHtml, setReembedFetchHtml] = useState(false);
+  const [maintenanceStarting, setMaintenanceStarting] = useState(false);
+  const [maintenanceError, setMaintenanceError] = useState<string | null>(null);
+
+  const adminJobBusy = Boolean(crawlerJob?.running || maintenanceJob?.running);
 
   const logout = useCallback(async () => {
     await fetch("/api/admin/logout", { method: "POST" });
@@ -143,10 +168,72 @@ export default function AdminPage() {
     }
   }, [router, crawlLimit, crawlReembed]);
 
+  const loadMaintenanceStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/fastapi/admin/reembed", { cache: "no-store" });
+      const payload = await res.json();
+      if (res.status === 401) {
+        router.push("/admin/login");
+        return;
+      }
+      if (!res.ok) return;
+      const job = payload?.job as MaintenanceJob | undefined;
+      if (job) setMaintenanceJob(job);
+    } catch {
+      /* ignore polling errors */
+    }
+  }, [router]);
+
+  const startMaintenance = useCallback(async () => {
+    setMaintenanceStarting(true);
+    setMaintenanceError(null);
+    try {
+      const res = await fetch("/api/fastapi/admin/reembed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          force_all: reembedForceAll,
+          only_without_category: reembedOnlyNoCategory,
+          backfill_categories_first: reembedBackfillCategories,
+          fetch_html_for_categories: reembedFetchHtml,
+          category_limit: 0,
+        }),
+      });
+      const payload = await res.json();
+      if (res.status === 401) {
+        router.push("/admin/login");
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(
+          typeof payload?.error === "string"
+            ? payload.error
+            : "Impossible de démarrer la maintenance.",
+        );
+      }
+      const job = payload?.job as MaintenanceJob | undefined;
+      if (job) {
+        setMaintenanceJob({ ...job, running: true, status: "running", message: "Maintenance en cours…" });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erreur inconnue.";
+      setMaintenanceError(message);
+    } finally {
+      setMaintenanceStarting(false);
+    }
+  }, [
+    router,
+    reembedForceAll,
+    reembedOnlyNoCategory,
+    reembedBackfillCategories,
+    reembedFetchHtml,
+  ]);
+
   useEffect(() => {
     void loadOverview();
     void loadCrawlerStatus();
-  }, [loadOverview, loadCrawlerStatus]);
+    void loadMaintenanceStatus();
+  }, [loadOverview, loadCrawlerStatus, loadMaintenanceStatus]);
 
   useEffect(() => {
     if (!crawlerJob?.running) return;
@@ -157,11 +244,26 @@ export default function AdminPage() {
   }, [crawlerJob?.running, loadCrawlerStatus]);
 
   useEffect(() => {
+    if (!maintenanceJob?.running) return;
+    const id = window.setInterval(() => {
+      void loadMaintenanceStatus();
+    }, 4000);
+    return () => window.clearInterval(id);
+  }, [maintenanceJob?.running, loadMaintenanceStatus]);
+
+  useEffect(() => {
     if (crawlerJob?.running) return;
     if (crawlerJob?.status === "success") {
       void loadOverview(true);
     }
   }, [crawlerJob?.running, crawlerJob?.status, loadOverview]);
+
+  useEffect(() => {
+    if (maintenanceJob?.running) return;
+    if (maintenanceJob?.status === "success") {
+      void loadOverview(true);
+    }
+  }, [maintenanceJob?.running, maintenanceJob?.status, loadOverview]);
 
   const cards = useMemo(
     () => [
@@ -189,6 +291,11 @@ export default function AdminPage() {
         icon: <Globe size={15} />,
         label: "Sources dans sources.json",
         value: data?.stats.catalog_sources_configured ?? "—",
+      },
+      {
+        icon: <Tags size={15} />,
+        label: "Sans catégorie",
+        value: data?.stats.articles_without_category ?? "—",
       },
     ],
     [data],
@@ -234,9 +341,9 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <section className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <section className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {loading
-          ? [1, 2, 3, 4, 5].map((n) => <div key={n}>{skeletonCard}</div>)
+          ? [1, 2, 3, 4, 5, 6].map((n) => <div key={n}>{skeletonCard}</div>)
           : cards.map((s) => (
           <article key={s.label} className="rdc-card rounded-2xl p-4 transition hover:-translate-y-0.5 hover:border-slate-400/40">
             <div className="mb-2 flex items-center gap-2 text-slate-400">
@@ -291,7 +398,7 @@ export default function AdminPage() {
             <select
               value={crawlLimit}
               onChange={(e) => setCrawlLimit(Number(e.target.value))}
-              disabled={crawlerJob?.running || crawlerStarting}
+              disabled={adminJobBusy || crawlerStarting}
               className="rounded-lg border border-slate-600/40 bg-slate-900/60 px-3 py-2 text-sm text-slate-200"
             >
               {[10, 20, 30, 50, 100].map((n) => (
@@ -306,7 +413,7 @@ export default function AdminPage() {
               type="checkbox"
               checked={crawlReembed}
               onChange={(e) => setCrawlReembed(e.target.checked)}
-              disabled={crawlerJob?.running || crawlerStarting}
+              disabled={adminJobBusy || crawlerStarting}
               className="rounded border-slate-500"
             />
             Re-embedding après crawl
@@ -314,7 +421,7 @@ export default function AdminPage() {
           <button
             type="button"
             onClick={() => void startCrawler()}
-            disabled={crawlerJob?.running || crawlerStarting}
+            disabled={adminJobBusy || crawlerStarting}
             className="rdc-btn-primary inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Play size={14} />
@@ -323,6 +430,114 @@ export default function AdminPage() {
               : crawlerJob?.running
                 ? "Crawl en cours…"
                 : "Lancer le crawl"}
+          </button>
+        </div>
+      </section>
+
+      <section className="rdc-card mb-4 rounded-2xl p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-200">
+              Index vectoriel & catégories (Chroma)
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Re-synchronise les embeddings vers Chroma après un changement de base. Peut d’abord
+              remplir les catégories manquantes (depuis l’URL), puis ré-indexer.
+            </p>
+          </div>
+          {maintenanceJob?.running ? (
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/30 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-200">
+              <RefreshCw size={12} className="animate-spin" /> Maintenance…
+            </span>
+          ) : maintenanceJob?.status === "success" ? (
+            <span className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-200">
+              Dernière maintenance : OK
+            </span>
+          ) : maintenanceJob?.status === "error" ? (
+            <span className="rounded-lg border border-red-400/30 bg-red-500/10 px-2.5 py-1 text-xs text-red-200">
+              Dernière maintenance : erreur
+            </span>
+          ) : null}
+        </div>
+
+        {maintenanceError && (
+          <div className="mb-3 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+            {maintenanceError}
+          </div>
+        )}
+
+        {maintenanceJob?.message && !maintenanceJob.running ? (
+          <p className="mb-2 text-xs text-slate-400">{maintenanceJob.message}</p>
+        ) : null}
+        {maintenanceJob?.categories_result ? (
+          <p className="mb-2 text-xs text-slate-500">
+            Catégories : {maintenanceJob.categories_result.updated ?? 0} mis à jour /{" "}
+            {maintenanceJob.categories_result.scanned ?? 0} scannés.
+          </p>
+        ) : null}
+        {maintenanceJob?.reembed_result ? (
+          <p className="mb-2 text-xs text-slate-500">
+            Embeddings : {maintenanceJob.reembed_result.reembedded ?? 0} vectorisés /{" "}
+            {maintenanceJob.reembed_result.processed ?? 0} traités.
+          </p>
+        ) : null}
+        {maintenanceJob?.error ? (
+          <p className="mb-3 text-xs text-red-300">{maintenanceJob.error}</p>
+        ) : null}
+
+        <div className="flex flex-col gap-3">
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-300">
+            <input
+              type="checkbox"
+              checked={reembedForceAll}
+              onChange={(e) => setReembedForceAll(e.target.checked)}
+              disabled={adminJobBusy || maintenanceStarting}
+              className="rounded border-slate-500"
+            />
+            Tout le corpus (après changement BDD / reset Chroma)
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-300">
+            <input
+              type="checkbox"
+              checked={reembedOnlyNoCategory}
+              onChange={(e) => setReembedOnlyNoCategory(e.target.checked)}
+              disabled={adminJobBusy || maintenanceStarting}
+              className="rounded border-slate-500"
+            />
+            Re-embedding uniquement sur les articles sans catégorie
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-300">
+            <input
+              type="checkbox"
+              checked={reembedBackfillCategories}
+              onChange={(e) => setReembedBackfillCategories(e.target.checked)}
+              disabled={adminJobBusy || maintenanceStarting}
+              className="rounded border-slate-500"
+            />
+            Remplir les catégories manquantes avant (inférence URL)
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-500">
+            <input
+              type="checkbox"
+              checked={reembedFetchHtml}
+              onChange={(e) => setReembedFetchHtml(e.target.checked)}
+              disabled={adminJobBusy || maintenanceStarting || !reembedBackfillCategories}
+              className="rounded border-slate-500"
+            />
+            Re-télécharger les pages pour les catégories (lent, optionnel)
+          </label>
+          <button
+            type="button"
+            onClick={() => void startMaintenance()}
+            disabled={adminJobBusy || maintenanceStarting}
+            className="rdc-btn-primary inline-flex w-fit items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Layers size={14} />
+            {maintenanceStarting
+              ? "Démarrage…"
+              : maintenanceJob?.running
+                ? "Maintenance en cours…"
+                : "Lancer re-embedding / catégories"}
           </button>
         </div>
       </section>
