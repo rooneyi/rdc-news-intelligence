@@ -217,9 +217,11 @@ async def process_telegram_message(
     local_context = None
     global_context = None
     if conversational_memory_enabled():
-        local_context = await memory_service.search_similar(chat_id, query_embedding)
+        local_context = await memory_service.resolve_local_context(
+            chat_id, query, query_embedding
+        )
         global_context = await memory_service.search_global_similar(query_embedding)
-    
+
     # 2. Topic Gate
     decision = await topic_gate_service.classify(query)
     if not decision.should_activate:
@@ -1002,7 +1004,9 @@ async def process_whatsapp_message(
     local_context = None
     global_context = None
     if conversational_memory_enabled():
-        local_context = await memory_service.search_similar(phone_number, query_embedding)
+        local_context = await memory_service.resolve_local_context(
+            phone_number, query, query_embedding
+        )
         global_context = await memory_service.search_global_similar(query_embedding)
 
     # Topic gate (groupes) — avant replay / RAG
@@ -1031,6 +1035,37 @@ async def process_whatsapp_message(
             verdict=local_context.get("verdict", ""),
             sources=local_context.get("sources", []),
             platform_message_id=sent_message_id,
+        )
+        return
+
+    inflight_claimed = await memory_service.claim_query_processing(phone_number, query)
+    if not inflight_claimed:
+        local_context = await memory_service.wait_for_local_context(
+            phone_number, query, query_embedding
+        )
+        if should_fast_replay_local(local_context):
+            body = format_cached_replay_body(local_context)
+            logger.info(
+                "[Whapi] Replay mémoire rapide (après attente pair) chat=%s",
+                phone_number[:40],
+            )
+            sent_message_id = await _send_whatsapp_long_body(
+                phone_number, body, transport=transport
+            )
+            await memory_service.add_to_memory(
+                chat_id=phone_number,
+                query=query,
+                embedding=query_embedding,
+                verdict=local_context.get("verdict", ""),
+                sources=local_context.get("sources", []),
+                platform_message_id=sent_message_id,
+            )
+            return
+        await _send_whatsapp_text(
+            phone_number,
+            "⏳ Une vérification de cette question est déjà en cours. "
+            "Réessaie dans une trentaine de secondes.",
+            transport=transport,
         )
         return
 
@@ -1116,6 +1151,9 @@ async def process_whatsapp_message(
 
     except Exception as e:
         logger.error(f"Erreur traitement WhatsApp: {e}")
+    finally:
+        if inflight_claimed:
+            await memory_service.release_query_processing(phone_number, query)
 
 
 async def process_whatsapp_image(
@@ -1260,8 +1298,8 @@ async def process_whatsapp_image(
                         emb_exc,
                     )
                 if query_embedding is not None:
-                    similar_context = await memory_service.search_similar(
-                        phone_number, query_embedding
+                    similar_context = await memory_service.resolve_local_context(
+                        phone_number, combined_query, query_embedding
                     )
                 if should_fast_replay_local(similar_context):
                     logger.info(

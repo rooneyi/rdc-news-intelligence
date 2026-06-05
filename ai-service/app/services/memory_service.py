@@ -1,6 +1,9 @@
+import asyncio
+import hashlib
 import json
 import logging
 import os
+import re
 import time
 from typing import List, Optional, Dict, Any
 
@@ -38,6 +41,16 @@ def telegram_dedup_enabled() -> bool:
     if raw in {"1", "true", "yes", "on"}:
         return True
     return inbound_message_dedup_enabled()
+
+
+def normalize_query_text(query: str) -> str:
+    """Texte comparable pour match exact (casse / espaces ignorés)."""
+    q = (query or "").strip().lower()
+    return re.sub(r"\s+", " ", q)
+
+
+def query_memory_hash(query: str) -> str:
+    return hashlib.md5(normalize_query_text(query).encode("utf-8")).hexdigest()
 
 
 def normalize_memory_chat_id(chat_id: str) -> str:
@@ -191,6 +204,9 @@ class ConversationalMemoryService:
         self.ttl = int(os.getenv("MEMORY_TTL_SECONDS", "3600"))  # 1 heure par défaut
         self.similarity_threshold = float(os.getenv("MEMORY_SIMILARITY_THRESHOLD", "0.92"))
         self.inbound_dedup_ttl = int(os.getenv("WHATSAPP_INBOUND_DEDUP_TTL_SECONDS", "86400"))
+        self.query_inflight_ttl = int(os.getenv("MEMORY_QUERY_INFLIGHT_TTL_SECONDS", "180"))
+        self.peer_wait_seconds = float(os.getenv("MEMORY_PEER_WAIT_SECONDS", "90"))
+        self.peer_poll_seconds = float(os.getenv("MEMORY_PEER_POLL_SECONDS", "1.5"))
 
     async def claim_whatsapp_message(
         self,
@@ -274,6 +290,96 @@ class ConversationalMemoryService:
     def _get_global_index_key(self) -> str:
         return "global_topics_index"
 
+    def _query_inflight_key(self, chat_id: str, query: str) -> str:
+        return f"query_inflight:{normalize_memory_chat_id(chat_id)}:{query_memory_hash(query)}"
+
+    async def search_exact_query(self, chat_id: str, query: str) -> Optional[Dict[str, Any]]:
+        """Match mot pour mot (normalisé) — score 1.0 implicite."""
+        if not conversational_memory_enabled():
+            return None
+        try:
+            chat_id = normalize_memory_chat_id(chat_id)
+            msg_hash = query_memory_hash(query)
+            raw_data = await self.redis_client.get(self._get_msg_key(msg_hash))
+            if not raw_data:
+                return None
+            data = json.loads(raw_data)
+            if not (data.get("verdict") or "").strip():
+                return None
+            logger.info(
+                "[Memory] Match exact chat=%s query=%.60s",
+                chat_id[:60],
+                normalize_query_text(query),
+            )
+            return data
+        except Exception as e:
+            logger.error("[Memory] Erreur search_exact_query: %s", e)
+            return None
+
+    async def resolve_local_context(
+        self,
+        chat_id: str,
+        query: str,
+        query_embedding: List[float],
+    ) -> Optional[Dict[str, Any]]:
+        """Exact d’abord, puis similarité sémantique."""
+        exact = await self.search_exact_query(chat_id, query)
+        if exact:
+            return exact
+        return await self.search_similar(chat_id, query_embedding)
+
+    async def claim_query_processing(self, chat_id: str, query: str) -> bool:
+        """Verrou : une seule analyse RAG à la fois pour chat + question."""
+        if not conversational_memory_enabled():
+            return True
+        key = self._query_inflight_key(chat_id, query)
+        try:
+            claimed = await self.redis_client.set(
+                key,
+                "1",
+                nx=True,
+                ex=self.query_inflight_ttl,
+            )
+            if not claimed:
+                logger.info(
+                    "[Memory] Requête déjà en cours chat=%s query=%.50s",
+                    normalize_memory_chat_id(chat_id)[:40],
+                    normalize_query_text(query)[:50],
+                )
+            return bool(claimed)
+        except Exception as e:
+            logger.error("[Memory] Erreur claim_query_processing: %s", e)
+            return True
+
+    async def release_query_processing(self, chat_id: str, query: str) -> None:
+        try:
+            await self.redis_client.delete(self._query_inflight_key(chat_id, query))
+        except Exception as e:
+            logger.error("[Memory] Erreur release_query_processing: %s", e)
+
+    async def wait_for_local_context(
+        self,
+        chat_id: str,
+        query: str,
+        query_embedding: List[float],
+    ) -> Optional[Dict[str, Any]]:
+        """Attend qu’une autre tâche finisse le RAG pour la même question."""
+        deadline = time.time() + self.peer_wait_seconds
+        logger.info(
+            "[Memory] Attente verdict pair chat=%s query=%.50s (max %.0fs)",
+            normalize_memory_chat_id(chat_id)[:40],
+            normalize_query_text(query)[:50],
+            self.peer_wait_seconds,
+        )
+        while time.time() < deadline:
+            ctx = await self.resolve_local_context(chat_id, query, query_embedding)
+            if should_fast_replay_local(ctx):
+                logger.info("[Memory] Verdict pair disponible — replay rapide possible")
+                return ctx
+            await asyncio.sleep(self.peer_poll_seconds)
+        logger.info("[Memory] Timeout attente pair (%.0fs)", self.peer_wait_seconds)
+        return None
+
     async def add_to_memory(
         self, 
         chat_id: str, 
@@ -287,9 +393,8 @@ class ConversationalMemoryService:
         if not conversational_memory_enabled():
             return
         try:
-            import hashlib
             chat_id = normalize_memory_chat_id(chat_id)
-            msg_hash = hashlib.md5(query.encode('utf-8')).hexdigest()
+            msg_hash = query_memory_hash(query)
             
             msg_key = self._get_msg_key(msg_hash)
             chat_key = self._get_chat_key(chat_id)
@@ -428,9 +533,16 @@ class ConversationalMemoryService:
                 )
                 return best_match
 
-            if best_match:
+            if best_match and max_similarity >= 0.5:
                 logger.info(
                     "[Memory] Sujet proche mais sous seuil chat=%s score=%.2f (seuil=%.2f)",
+                    chat_id[:60],
+                    max_similarity,
+                    self.similarity_threshold,
+                )
+            elif best_match:
+                logger.info(
+                    "[Memory] Historique sans match pertinent chat=%s meilleur_score=%.2f (seuil=%.2f)",
                     chat_id[:60],
                     max_similarity,
                     self.similarity_threshold,
