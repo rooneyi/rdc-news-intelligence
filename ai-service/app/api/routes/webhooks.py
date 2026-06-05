@@ -10,6 +10,7 @@ from app.services.memory_service import (
     ConversationalMemoryService,
     conversational_memory_enabled,
     repeat_note_prefix,
+    should_show_repeat_indicator,
     should_use_refined_local,
     should_use_viral_global,
 )
@@ -279,8 +280,13 @@ async def process_telegram_message(
                     channel="telegram",
                 )
             else:
+                if should_show_repeat_indicator(local_context):
+                    text_buffer = repeat_note_prefix()
+                    reply_to_id = local_context.get("root_message_id")
+                    logger.info("[Telegram] Sujet proche déjà vu — RAG standard + indicateur 💡")
+                else:
+                    reply_to_id = None
                 gen = rag_service.generate_answer_stream(query, channel="telegram")
-                reply_to_id = None
 
             # Si on a un message racine locale, on essaie de citer
             if reply_to_id:
@@ -1027,11 +1033,16 @@ async def process_whatsapp_message(
             body = f"{repeat_note_prefix()}{verdict}"
             
         else:
-            logger.info("[Whapi] RAG standard (nouvelle question)")
+            if should_show_repeat_indicator(local_context):
+                reply_to_id = local_context.get("root_message_id")
+                logger.info("[Whapi] Sujet proche déjà vu — RAG standard + indicateur 💡")
+            else:
+                logger.info("[Whapi] RAG standard (nouvelle question)")
             rag_res = await rag_service.generate_full_answer(query, channel="whatsapp")
             verdict = rag_res.get("verdict", "")
             sources = rag_res.get("sources", [])
-            body = (verdict or "").strip()
+            prefix = repeat_note_prefix() if should_show_repeat_indicator(local_context) else ""
+            body = f"{prefix}{(verdict or '').strip()}".strip()
         
         # Envoi WhatsApp
         if sources and "SOURCES" not in body.upper():

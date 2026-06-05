@@ -62,13 +62,32 @@ def memory_viral_min_groups() -> int:
 
 
 def memory_show_repeat_note() -> bool:
-    """Préfixe « Sujet déjà abordé » (désactivé par défaut)."""
+    """Long préfixe « Note : Sujet déjà abordé… » (désactivé par défaut)."""
     return os.getenv("MEMORY_SHOW_REPEAT_NOTE", "false").lower() in {
         "1",
         "true",
         "yes",
         "on",
     }
+
+
+def memory_show_repeat_indicator() -> bool:
+    """Petite lampe 💡 quand un sujet proche a déjà été traité dans ce chat."""
+    if not conversational_memory_enabled():
+        return False
+    return os.getenv("MEMORY_SHOW_REPEAT_INDICATOR", "true").lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
+def should_show_repeat_indicator(local_context: Optional[Dict[str, Any]]) -> bool:
+    """Match sémantique local → afficher l’indicateur (dès la 2ᵉ fois)."""
+    if not memory_show_repeat_indicator() or not local_context:
+        return False
+    return True
 
 
 def should_use_refined_local(local_context: Optional[Dict[str, Any]]) -> bool:
@@ -86,6 +105,8 @@ def should_use_viral_global(global_context: Optional[Dict[str, Any]]) -> bool:
 def repeat_note_prefix() -> str:
     if memory_show_repeat_note():
         return "💡 *Note* : Sujet déjà abordé ici. Mise à jour :\n\n"
+    if memory_show_repeat_indicator():
+        return "💡 *Déjà abordé* — "
     return ""
 
 
