@@ -9,7 +9,9 @@ from app.services.embedding_service import EmbeddingService
 from app.services.memory_service import (
     ConversationalMemoryService,
     conversational_memory_enabled,
+    format_cached_replay_body,
     repeat_note_prefix,
+    should_fast_replay_local,
     should_show_repeat_indicator,
     should_use_refined_local,
     should_use_viral_global,
@@ -226,6 +228,21 @@ async def process_telegram_message(
             decision.confidence,
             query,
         )
+        return
+
+    if should_fast_replay_local(local_context):
+        body = format_cached_replay_body(local_context)
+        logger.info("[Telegram] Replay mémoire rapide (sans RAG) chat=%s", chat_id)
+        await _send_telegram_message(bot_token, chat_id, body)
+        if conversational_memory_enabled():
+            await memory_service.add_to_memory(
+                chat_id=chat_id,
+                query=query,
+                embedding=query_embedding,
+                verdict=local_context.get("verdict", ""),
+                sources=local_context.get("sources", []),
+                platform_message_id=platform_message_id,
+            )
         return
 
     # 3. Envoi du message d'attente
@@ -969,6 +986,11 @@ async def process_whatsapp_message(
 ):
     platform_key = f"whatsapp:{transport}"
     if not await memory_service.claim_inbound_message(platform_key, wa_message_id):
+        logger.info(
+            "[Dedup] WhatsApp ignoré (déjà traité) transport=%s id=%s",
+            transport,
+            (wa_message_id or "")[:40],
+        )
         return
 
     await _whatsapp_mark_read_and_show_typing(wa_message_id)
@@ -1014,6 +1036,23 @@ async def process_whatsapp_message(
             body = f"🔥 *ALERTE VIRALITÉ* : Sujet détecté dans {group_count} groupes. Synthèse d'intelligence :\n\n{verdict}"
             reply_to_id = local_context.get("root_message_id") if local_context else None
             
+        elif should_fast_replay_local(local_context):
+            body = format_cached_replay_body(local_context)
+            reply_to_id = local_context.get("root_message_id")
+            logger.info("[Whapi] Replay mémoire rapide (sans RAG) chat=%s", phone_number[:40])
+            sent_message_id = await _send_whatsapp_long_body(
+                phone_number, body, transport=transport, reply_to_id=reply_to_id
+            )
+            await memory_service.add_to_memory(
+                chat_id=phone_number,
+                query=query,
+                embedding=query_embedding,
+                verdict=local_context.get("verdict", ""),
+                sources=local_context.get("sources", []),
+                platform_message_id=sent_message_id,
+            )
+            return
+
         elif should_use_refined_local(local_context):
             old_query = local_context.get("query", "Inconnue")
             old_verdict = local_context.get("verdict", "")
@@ -1118,6 +1157,11 @@ async def process_whatsapp_image(
 
     platform_key = f"whatsapp:{transport}"
     if not await memory_service.claim_inbound_message(platform_key, wa_message_id):
+        logger.info(
+            "[Dedup] WhatsApp ignoré (déjà traité) transport=%s id=%s",
+            transport,
+            (wa_message_id or "")[:40],
+        )
         return
 
     await _whatsapp_mark_read_and_show_typing(wa_message_id)
@@ -1210,24 +1254,20 @@ async def process_whatsapp_image(
                     similar_context = await memory_service.search_similar(
                         phone_number, query_embedding
                     )
-                    if should_use_refined_local(similar_context):
-                        previous_verdict = similar_context.get("verdict")
-                        previous_sources = similar_context.get("sources", [])
-                        prefix = repeat_note_prefix() or ""
-                        sources_text = ""
-                        if previous_sources:
-                            lines = []
-                            for i, s in enumerate(previous_sources, 1):
-                                url = s.get("url") or "(lien indisponible)"
-                                title = s.get("title") or "Source locale"
-                                lines.append(f"[{i}] {title} - {url}")
-                            sources_text = "\n🔗 SOURCES LOCALES :\n" + "\n".join(lines) + "\n"
-                        await _send_whatsapp_text(
-                            phone_number,
-                            f"{prefix}{previous_verdict}{sources_text}",
-                            transport=transport,
-                        )
-                        return
+                if should_fast_replay_local(similar_context):
+                    await _send_whatsapp_text(
+                        phone_number,
+                        format_cached_replay_body(similar_context),
+                        transport=transport,
+                    )
+                    await memory_service.add_to_memory(
+                        chat_id=phone_number,
+                        query=combined_query,
+                        embedding=query_embedding,
+                        verdict=similar_context.get("verdict", ""),
+                        sources=similar_context.get("sources", []),
+                    )
+                    return
 
             if require_topic_gate:
                 decision = await topic_gate_service.classify(combined_query)

@@ -83,6 +83,18 @@ def memory_show_repeat_indicator() -> bool:
     }
 
 
+def memory_fast_replay_enabled() -> bool:
+    """Renvoyer le verdict en cache sans RAG/LLM (réponse rapide)."""
+    if not conversational_memory_enabled():
+        return False
+    return os.getenv("MEMORY_FAST_REPLAY", "true").lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
 def should_show_repeat_indicator(local_context: Optional[Dict[str, Any]]) -> bool:
     """Match sémantique local → afficher l’indicateur (dès la 2ᵉ fois)."""
     if not memory_show_repeat_indicator() or not local_context:
@@ -90,10 +102,36 @@ def should_show_repeat_indicator(local_context: Optional[Dict[str, Any]]) -> boo
     return True
 
 
+def should_fast_replay_local(local_context: Optional[Dict[str, Any]]) -> bool:
+    """Sujet déjà traité dans ce chat → réponse instantanée depuis Redis."""
+    if not memory_fast_replay_enabled() or not local_context:
+        return False
+    return bool((local_context.get("verdict") or "").strip())
+
+
 def should_use_refined_local(local_context: Optional[Dict[str, Any]]) -> bool:
+    """RAG raffiné (LLM) — seulement si le replay rapide est désactivé."""
     if not conversational_memory_enabled() or not local_context:
         return False
+    if memory_fast_replay_enabled():
+        return False
     return int(local_context.get("occurrence_count") or 0) >= memory_refine_min_occurrence()
+
+
+def format_cached_replay_body(local_context: Dict[str, Any]) -> str:
+    """Corps WhatsApp/Telegram pour un sujet déjà vérifié."""
+    prefix = repeat_note_prefix()
+    verdict = (local_context.get("verdict") or "").strip()
+    body = f"{prefix}{verdict}".strip()
+    sources = local_context.get("sources") or []
+    if sources and "SOURCES" not in body.upper():
+        lines = []
+        for i, s in enumerate(sources, 1):
+            url = s.get("url") or "(lien indisponible)"
+            title = s.get("title") or "Source locale"
+            lines.append(f"[{i}] {title} - {url}")
+        body = f"{body}\n\n🔗 SOURCES LOCALES :\n" + "\n".join(lines)
+    return body
 
 
 def should_use_viral_global(global_context: Optional[Dict[str, Any]]) -> bool:

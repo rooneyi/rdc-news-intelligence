@@ -1,0 +1,219 @@
+<mxfile host="65bd71144e">
+    <diagram id="uc-synthese" name="2. Cas d'utilisation (synthèse mémoire)">
+        <mxGraphModel dx="3955" dy="2679" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="700" background="#ffffff" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="t2" value="Vue synthèse — 5 cas d'utilisation métier (Chapitre 3 §3.2)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="250" y="15" width="600" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="su" value="Utilisateur&#10;(WhatsApp / Telegram)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="200" width="40" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="sw" value="Utilisateur&#10;web" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="80" width="40" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="sa" value="Administrateur" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="380" width="40" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="ss" value="Médias sources" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="980" y="380" width="40" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="sg" value="Passerelle&#10;Whapi / Telegram" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="520" width="40" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="sys2" value="RDC News Intelligence" style="swimlane;whiteSpace=wrap;html=1;startSize=30;fillColor=#f5f5f5;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="50" width="720" height="560" as="geometry"/>
+                </mxCell>
+                <mxCell id="suc1" value="UC1 — Vérifier une information&#10;(texte / image → verdict + sources)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="sys2" vertex="1">
+                    <mxGeometry x="60" y="50" width="280" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="suc4" value="UC4 — Interroger via le canal web&#10;(POST /rag, client Next.js)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="sys2" vertex="1">
+                    <mxGeometry x="60" y="160" width="280" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="suc5" value="UC5 — Filtrer le bruit en groupe&#10;(Topic Gate — actualité RDC)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="sys2" vertex="1">
+                    <mxGeometry x="400" y="50" width="280" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="suc2" value="UC2 — Alimenter le corpus&#10;(crawler, cron, embeddings Chroma)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="sys2" vertex="1">
+                    <mxGeometry x="60" y="320" width="300" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="suc3" value="UC3 — Administrer le système&#10;(stats, crawl, re-embedding, catégories)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="sys2" vertex="1">
+                    <mxGeometry x="400" y="320" width="300" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="esinc" style="endArrow=open;dashed=1;html=1;" parent="sys2" source="suc1" target="suc5" edge="1"/>
+                <mxCell id="esincl" value="&amp;lt;&amp;lt;include&amp;gt;&amp;gt; (groupes)" style="edgeLabel;html=1;align=center;" parent="esinc" connectable="0" vertex="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="es1" style="endArrow=none;html=1;" parent="1" source="su" target="suc1" edge="1"/>
+                <mxCell id="es2" style="endArrow=none;html=1;" parent="1" source="sw" target="suc4" edge="1"/>
+                <mxCell id="es3" style="endArrow=none;html=1;" parent="1" source="sa" target="suc3" edge="1"/>
+                <mxCell id="es4" style="endArrow=none;html=1;" parent="1" source="sa" target="suc2" edge="1"/>
+                <mxCell id="es5" style="endArrow=none;html=1;" parent="1" source="sg" target="suc1" edge="1"/>
+                <mxCell id="es6" style="endArrow=none;html=1;" parent="1" source="suc2" target="ss" edge="1"/>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="uc-complet" name="1. Cas d'utilisation (complet)">
+        <mxGraphModel dx="655" dy="579" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" background="#ffffff" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title1" value="RDC News Intelligence — diagramme de cas d'utilisation (UML)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="350" y="10" width="700" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="a_web" value="Utilisateur&#10;(web / client)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="80" width="40" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="a_msg" value="Utilisateur&#10;(messagerie)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="220" width="40" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="a_gw" value="Passerelle&#10;Whapi / Telegram" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="360" width="40" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="a_adm" value="Administrateur&#10;/ opérateur" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="500" width="40" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="a_cron" value="Planificateur&#10;(CRON 2h)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="640" width="40" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="a_src" value="Sources web&#10;(médias RDC)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" parent="1" vertex="1">
+                    <mxGeometry x="1280" y="560" width="40" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="sys1" value="« système » RDC News Intelligence (ai-service + frontend admin)" style="swimlane;whiteSpace=wrap;html=1;startSize=36;fillColor=#f5f5f5;strokeColor=#333333;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="50" width="1020" height="720" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc1" value="UC1 — Soumettre une information&#10;à vérifier (texte / image)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="sys1" vertex="1">
+                    <mxGeometry x="80" y="60" width="240" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc2" value="UC2 — Recevoir un verdict&#10;contextualisé (VRAI / FAUX / IMPRÉCIS)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="sys1" vertex="1">
+                    <mxGeometry x="400" y="60" width="260" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc3" value="UC3 — Recevoir une réponse&#10;non redondante (💡 déjà abordé)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="sys1" vertex="1">
+                    <mxGeometry x="720" y="60" width="260" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc11" value="UC11 — Consulter le corpus&#10;(RAG web / client)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="sys1" vertex="1">
+                    <mxGeometry x="80" y="170" width="240" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc6" value="UC6 — Normaliser le message&#10;(WhapiInbound / dedup)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" parent="sys1" vertex="1">
+                    <mxGeometry x="80" y="290" width="220" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc7" value="UC7 — Classifier le thème&#10;(Topic Gate — groupes)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" parent="sys1" vertex="1">
+                    <mxGeometry x="340" y="290" width="220" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc10" value="UC10 — Extraire texte OCR&#10;(image WhatsApp / Telegram)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" parent="sys1" vertex="1">
+                    <mxGeometry x="600" y="290" width="240" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc8" value="UC8 — Récupérer les sources&#10;(retrieval Chroma Top-K)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" parent="sys1" vertex="1">
+                    <mxGeometry x="400" y="170" width="240" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc12" value="UC12 — Détecter sujet similaire&#10;(mémoire conversationnelle Redis)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" parent="sys1" vertex="1">
+                    <mxGeometry x="720" y="170" width="260" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc4" value="UC4 — Mettre à jour la base&#10;documentaire (crawler + sync)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="sys1" vertex="1">
+                    <mxGeometry x="80" y="450" width="260" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc9" value="UC9 — Indexer en vectoriel&#10;(re-embedding Chroma)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" parent="sys1" vertex="1">
+                    <mxGeometry x="400" y="450" width="240" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc13" value="UC13 — Backfill catégories&#10;(articles sans catégorie)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" parent="sys1" vertex="1">
+                    <mxGeometry x="680" y="450" width="240" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc5" value="UC5 — Superviser l'état du service&#10;(admin : stats, santé, jobs)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="sys1" vertex="1">
+                    <mxGeometry x="80" y="570" width="280" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc14" value="UC14 — Lancer jobs admin&#10;(crawl manuel, re-embedding)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="sys1" vertex="1">
+                    <mxGeometry x="420" y="570" width="260" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="inc1" style="endArrow=open;dashed=1;html=1;strokeColor=#333333;" parent="sys1" source="uc1" target="uc6" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="inc1l" value="&amp;lt;&amp;lt;include&amp;gt;&amp;gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;" parent="inc1" connectable="0" vertex="1">
+                    <mxGeometry x="-0.1" y="1" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="inc2" style="endArrow=open;dashed=1;html=1;strokeColor=#333333;" parent="sys1" source="uc1" target="uc7" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="inc2l" value="&amp;lt;&amp;lt;include&amp;gt;&amp;gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;" parent="inc2" connectable="0" vertex="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="inc3" style="endArrow=open;dashed=1;html=1;strokeColor=#333333;" parent="sys1" source="uc1" target="uc10" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="inc3l" value="&amp;lt;&amp;lt;include&amp;gt;&amp;gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;" parent="inc3" connectable="0" vertex="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="inc4" style="endArrow=open;dashed=1;html=1;strokeColor=#333333;" parent="sys1" source="uc2" target="uc8" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="inc4l" value="&amp;lt;&amp;lt;include&amp;gt;&amp;gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;" parent="inc4" connectable="0" vertex="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="inc5" style="endArrow=open;dashed=1;html=1;strokeColor=#333333;" parent="sys1" source="uc11" target="uc8" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="inc5l" value="&amp;lt;&amp;lt;include&amp;gt;&amp;gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;" parent="inc5" connectable="0" vertex="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="inc6" style="endArrow=open;dashed=1;html=1;strokeColor=#333333;" parent="sys1" source="uc4" target="uc9" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="inc6l" value="&amp;lt;&amp;lt;include&amp;gt;&amp;gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;" parent="inc6" connectable="0" vertex="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="inc7" style="endArrow=open;dashed=1;html=1;strokeColor=#333333;" parent="sys1" source="uc14" target="uc13" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="inc7l" value="&amp;lt;&amp;lt;include&amp;gt;&amp;gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;" parent="inc7" connectable="0" vertex="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="inc8" style="endArrow=open;dashed=1;html=1;strokeColor=#333333;" parent="sys1" source="uc14" target="uc9" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="inc8l" value="&amp;lt;&amp;lt;include&amp;gt;&amp;gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;" parent="inc8" connectable="0" vertex="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ext1" style="endArrow=open;dashed=1;html=1;strokeColor=#d6b656;" parent="sys1" source="uc3" target="uc2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ext1l" value="&amp;lt;&amp;lt;extend&amp;gt;&amp;gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;" parent="ext1" connectable="0" vertex="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="dep1" style="endArrow=open;html=1;strokeColor=#666666;" parent="sys1" source="uc1" target="uc2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="dep2" style="endArrow=open;html=1;strokeColor=#666666;" parent="sys1" source="uc2" target="uc12" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_aw_uc11" style="endArrow=none;html=1;strokeColor=#000000;" parent="1" source="a_web" target="uc11" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_am_uc2" style="endArrow=none;html=1;strokeColor=#000000;" parent="1" source="a_msg" target="uc2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_am_uc3" style="endArrow=none;html=1;strokeColor=#000000;" parent="1" source="a_msg" target="uc3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_gw_uc1" style="endArrow=none;html=1;strokeColor=#000000;" parent="1" source="a_gw" target="uc1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_adm_uc5" style="endArrow=none;html=1;strokeColor=#000000;" parent="1" source="a_adm" target="uc5" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_adm_uc14" style="endArrow=none;html=1;strokeColor=#000000;" parent="1" source="a_adm" target="uc14" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_cron_uc4" style="endArrow=none;html=1;strokeColor=#000000;" parent="1" source="a_cron" target="uc4" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_uc4_src" style="endArrow=none;html=1;strokeColor=#000000;" parent="1" source="uc4" target="a_src" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg1" value="Légende : ellipse = cas d'utilisation · bonhomme = acteur · &amp;lt;&amp;lt;include&amp;gt;&amp;gt; = obligatoire · &amp;lt;&amp;lt;extend&amp;gt;&amp;gt; = variante (sujet déjà traité)" style="text;html=1;strokeColor=none;fillColor=#f5f5f5;align=left;verticalAlign=top;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="790" width="1020" height="40" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

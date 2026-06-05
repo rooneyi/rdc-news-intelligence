@@ -51,8 +51,9 @@ Les reseaux sociaux et les modeles externes ne sont pas modelises comme composan
 
 ## 3.3 Diagramme de cas d'utilisation
 
-> **Figure a inserer :** exporter `thesis/figures/01-use-cases.mmd` en PNG (mermaid.live) ou recopier depuis `Diagrammes_UML_Mermaid.md` § 1a.  
-> Acteurs : utilisateur messagerie, utilisateur web, administrateur, passerelle Whapi/Telegram, sources web externes.
+> **Figure a inserer :** ouvrir `ai-service/docs/03-cas-utilisation-uml.drawio` (draw.io) — onglet **1. Cas d'utilisation (complet)** ou **2. Cas d'utilisation (synthèse mémoire)**, puis exporter en PNG pour Word.  
+> Source texte : `ai-service/docs/Chapitre_3_Modelisation.md` §3.1–3.3 · Mermaid : `Diagrammes_UML_Mermaid.md` § 1a.  
+> Acteurs : utilisateur messagerie, utilisateur web, administrateur, passerelle Whapi/Telegram, sources web externes, planificateur CRON.
 
 ### 3.3.1 Cas d'utilisation principaux
 
