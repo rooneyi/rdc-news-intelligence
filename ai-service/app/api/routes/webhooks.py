@@ -190,14 +190,22 @@ async def process_telegram_message(
     chat_id: str,
     query: str,
     platform_message_id: str | None = None,
+    *,
+    skip_dedup: bool = False,
 ):
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not bot_token:
         logger.error("TELEGRAM_BOT_TOKEN manquant")
         return
 
-    if not await memory_service.claim_inbound_message("telegram", platform_message_id):
-        return
+    if not skip_dedup:
+        if not await memory_service.claim_telegram_message(chat_id, platform_message_id):
+            logger.info(
+                "[Telegram] Message ignoré (déjà traité) chat=%s id=%s",
+                chat_id,
+                platform_message_id,
+            )
+            return
 
     base_url = f"https://api.telegram.org/bot{bot_token}"
 
@@ -1319,9 +1327,17 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
                         )
                 return {"status": "ok"}
 
-        tg_msg_id = str(message.get("message_id")) if message.get("message_id") is not None else None
+        tg_msg_id = message.get("message_id")
+        if not await memory_service.claim_telegram_message(str(chat_id), tg_msg_id):
+            logger.info("[Telegram] Webhook ignoré (dedup) chat=%s id=%s", chat_id, tg_msg_id)
+            return {"status": "ok", "dedup": True}
+        tg_msg_id_str = str(tg_msg_id) if tg_msg_id is not None else None
         background_tasks.add_task(
-            process_telegram_message, str(chat_id), text, tg_msg_id
+            process_telegram_message,
+            str(chat_id),
+            text,
+            tg_msg_id_str,
+            skip_dedup=True,
         )
         return {"status": "ok"}
 
@@ -1351,9 +1367,17 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
                 )
                 return {"status": "ok"}
 
-        tg_msg_id = str(message.get("message_id")) if message.get("message_id") is not None else None
+        tg_msg_id = message.get("message_id")
+        if not await memory_service.claim_telegram_message(str(chat_id), tg_msg_id):
+            logger.info("[Telegram] Webhook image ignoré (dedup) chat=%s id=%s", chat_id, tg_msg_id)
+            return {"status": "ok", "dedup": True}
+        tg_msg_id_str = str(tg_msg_id) if tg_msg_id is not None else None
         background_tasks.add_task(
-            process_telegram_message, str(chat_id), combined_query, tg_msg_id
+            process_telegram_message,
+            str(chat_id),
+            combined_query,
+            tg_msg_id_str,
+            skip_dedup=True,
         )
         
     return {"status": "ok"}

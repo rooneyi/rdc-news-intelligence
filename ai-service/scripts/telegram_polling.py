@@ -44,14 +44,22 @@ def main() -> None:
                 chat = message.get("chat", {})
                 chat_id = chat.get("id")
                 text = message.get("text")
+                telegram_message_id = message.get("message_id")
 
                 if chat_id is None or not text:
                     continue
 
-                logger.info("Message Telegram reçu (%s): %s", chat_id, text)
+                logger.info(
+                    "Message Telegram reçu (%s, id=%s): %s",
+                    chat_id,
+                    telegram_message_id,
+                    text,
+                )
 
-                # Réutilise exactement la même logique que le webhook
-                asyncio.run(process_telegram_message(str(chat_id), text))
+                tg_id_str = (
+                    str(telegram_message_id) if telegram_message_id is not None else None
+                )
+                asyncio.run(process_telegram_message(str(chat_id), text, tg_id_str))
 
         except Exception as e:
             logger.error("Erreur dans la boucle de polling Telegram: %s", e)

@@ -55,13 +55,19 @@ async def run_telegram_polling() -> None:
                     text = message.get("text")
                     photos = message.get("photo")
                     caption = message.get("caption")
+                    telegram_message_id = message.get("message_id")
 
                     if chat_id is None:
                         continue
 
                     # 1. Message texte classique -> pipeline RAG texte
                     if text:
-                        logger.info("[TelegramPolling] Message texte reçu (%s): %s", chat_id, text)
+                        logger.info(
+                            "[TelegramPolling] Message texte reçu (%s, id=%s): %s",
+                            chat_id,
+                            telegram_message_id,
+                            text,
+                        )
                         if topic_gate_service.is_group_chat(chat_type):
                             decision = await topic_gate_service.classify(text)
                             if not decision.should_activate:
@@ -73,7 +79,12 @@ async def run_telegram_polling() -> None:
                                     text,
                                 )
                                 continue
-                        await process_telegram_message(str(chat_id), text)
+                        tg_id_str = (
+                            str(telegram_message_id)
+                            if telegram_message_id is not None
+                            else None
+                        )
+                        await process_telegram_message(str(chat_id), text, tg_id_str)
                         continue
 
                     # 2. Message image -> OCR local puis RAG
@@ -113,8 +124,14 @@ async def run_telegram_polling() -> None:
                                     )
                                     continue
 
-                            # Réutilise la logique RAG/streaming texte existante
-                            await process_telegram_message(str(chat_id), combined_query)
+                            tg_id_str = (
+                                str(telegram_message_id)
+                                if telegram_message_id is not None
+                                else None
+                            )
+                            await process_telegram_message(
+                                str(chat_id), combined_query, tg_id_str
+                            )
                         except Exception as e:  # noqa: BLE001
                             logger.error("[TelegramPolling] Erreur traitement image: %s", e)
 

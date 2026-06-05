@@ -238,6 +238,10 @@ def _bootstrap() -> None:
 
         if os.getenv("ENABLE_TELEGRAM_POLLING", "").lower() in {"1", "true", "yes"}:
             asyncio.create_task(run_telegram_polling())
+            logger.warning(
+                "[Startup][Telegram] Polling actif — désactive le webhook Telegram chez BotFather "
+                "si tu reçois des doubles réponses (webhook + polling sur le même message)."
+            )
 
         if os.getenv("ENABLE_WHATSAPP_QUEUE_POLLING", "").lower() in {"1", "true", "yes"}:
             asyncio.create_task(run_whatsapp_queue_polling())

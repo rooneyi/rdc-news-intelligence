@@ -30,6 +30,27 @@ def inbound_message_dedup_enabled() -> bool:
     }
 
 
+def telegram_dedup_enabled() -> bool:
+    """Dédup Telegram (défaut : même réglage que WHATSAPP_DEDUP_INBOUND)."""
+    raw = os.getenv("TELEGRAM_DEDUP_INBOUND", "").strip().lower()
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    return inbound_message_dedup_enabled()
+
+
+def telegram_dedup_key(chat_id: str, message_id: int | str | None) -> str | None:
+    """Clé Redis : message_id Telegram n’est unique que par chat."""
+    if message_id is None:
+        return None
+    cid = str(chat_id).strip()
+    mid = str(message_id).strip()
+    if not cid or not mid:
+        return None
+    return f"{cid}:{mid}"
+
+
 def memory_refine_min_occurrence() -> int:
     """Nombre de fois qu’un sujet doit déjà avoir été traité avant le mode « raffiné »."""
     return max(1, int(os.getenv("MEMORY_REFINE_MIN_OCCURRENCE", "2")))
@@ -81,12 +102,40 @@ class ConversationalMemoryService:
         self.similarity_threshold = float(os.getenv("MEMORY_SIMILARITY_THRESHOLD", "0.92"))
         self.inbound_dedup_ttl = int(os.getenv("WHATSAPP_INBOUND_DEDUP_TTL_SECONDS", "86400"))
 
-    async def claim_inbound_message(self, platform: str, message_id: str | None) -> bool:
+    async def claim_telegram_message(
+        self,
+        chat_id: str,
+        message_id: int | str | None,
+    ) -> bool:
+        """Dédup Telegram (webhook + polling partagent la même clé chat_id:message_id)."""
+        if not telegram_dedup_enabled():
+            return True
+        dedup_id = telegram_dedup_key(chat_id, message_id)
+        if not dedup_id:
+            logger.warning(
+                "[Dedup] Telegram sans message_id (chat=%s) — dédup ignorée",
+                chat_id,
+            )
+            return True
+        return await self.claim_inbound_message(
+            "telegram",
+            dedup_id,
+            enabled=telegram_dedup_enabled(),
+        )
+
+    async def claim_inbound_message(
+        self,
+        platform: str,
+        message_id: str | None,
+        *,
+        enabled: bool | None = None,
+    ) -> bool:
         """
         Retourne True si le message peut être traité (première fois).
         Évite les doubles réponses (webhook + file, retries Whapi, etc.).
         """
-        if not inbound_message_dedup_enabled() or not message_id:
+        dedup_on = inbound_message_dedup_enabled() if enabled is None else enabled
+        if not dedup_on or not message_id:
             return True
         key = f"inbound_done:{platform}:{message_id.strip()}"
         try:
