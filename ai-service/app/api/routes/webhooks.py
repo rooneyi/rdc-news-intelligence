@@ -10,6 +10,7 @@ from app.services.memory_service import (
     ConversationalMemoryService,
     conversational_memory_enabled,
     format_cached_replay_body,
+    normalize_memory_chat_id,
     repeat_note_prefix,
     should_fast_replay_local,
     should_show_repeat_indicator,
@@ -984,16 +985,18 @@ async def process_whatsapp_message(
     *,
     transport: str = "meta",
 ):
+    phone_number = normalize_memory_chat_id(phone_number)
     platform_key = f"whatsapp:{transport}"
-    if not await memory_service.claim_inbound_message(platform_key, wa_message_id):
+    if not await memory_service.claim_whatsapp_message(
+        phone_number, wa_message_id, platform=platform_key
+    ):
         logger.info(
-            "[Dedup] WhatsApp ignoré (déjà traité) transport=%s id=%s",
+            "[Dedup] WhatsApp ignoré (déjà traité) transport=%s chat=%s id=%s",
             transport,
+            phone_number[:40],
             (wa_message_id or "")[:40],
         )
         return
-
-    await _whatsapp_mark_read_and_show_typing(wa_message_id)
 
     query_embedding = embedding_service.generate(query)
     local_context = None
@@ -1001,8 +1004,8 @@ async def process_whatsapp_message(
     if conversational_memory_enabled():
         local_context = await memory_service.search_similar(phone_number, query_embedding)
         global_context = await memory_service.search_global_similar(query_embedding)
-    
-    # 2. Topic Gate (Thématisation)
+
+    # Topic gate (groupes) — avant replay / RAG
     if require_topic_gate:
         decision = await topic_gate_service.classify(query)
         if not decision.should_activate:
@@ -1013,17 +1016,37 @@ async def process_whatsapp_message(
             )
             return
 
-    # 3. Exécution RAG (Normal, Raffiné ou Viral)
+    # Replay mémoire rapide — comme Telegram : avant frappe et avant tout RAG
+    if should_fast_replay_local(local_context):
+        body = format_cached_replay_body(local_context)
+        reply_to_id = local_context.get("root_message_id")
+        logger.info("[Whapi] Replay mémoire rapide (sans RAG) chat=%s", phone_number[:40])
+        sent_message_id = await _send_whatsapp_long_body(
+            phone_number, body, transport=transport, reply_to_id=reply_to_id
+        )
+        await memory_service.add_to_memory(
+            chat_id=phone_number,
+            query=query,
+            embedding=query_embedding,
+            verdict=local_context.get("verdict", ""),
+            sources=local_context.get("sources", []),
+            platform_message_id=sent_message_id,
+        )
+        return
+
+    await _whatsapp_mark_read_and_show_typing(wa_message_id)
+
+    # Exécution RAG (viral, raffiné ou standard)
     try:
         reply_to_id = None
-        
+
         if should_use_viral_global(global_context):
             group_count = global_context.get("group_count")
             old_query = global_context.get("last_query", "Sujet transverse")
             old_verdict = local_context.get("verdict", "") if local_context else ""
-            
+
             logger.info(f"[WhatsApp] Sujet VIRAL ({group_count} groupes).")
-            
+
             rag_res = await rag_service.generate_viral_full_answer(
                 query=query,
                 old_query=old_query,
@@ -1035,23 +1058,6 @@ async def process_whatsapp_message(
             sources = rag_res.get("sources", [])
             body = f"🔥 *ALERTE VIRALITÉ* : Sujet détecté dans {group_count} groupes. Synthèse d'intelligence :\n\n{verdict}"
             reply_to_id = local_context.get("root_message_id") if local_context else None
-            
-        elif should_fast_replay_local(local_context):
-            body = format_cached_replay_body(local_context)
-            reply_to_id = local_context.get("root_message_id")
-            logger.info("[Whapi] Replay mémoire rapide (sans RAG) chat=%s", phone_number[:40])
-            sent_message_id = await _send_whatsapp_long_body(
-                phone_number, body, transport=transport, reply_to_id=reply_to_id
-            )
-            await memory_service.add_to_memory(
-                chat_id=phone_number,
-                query=query,
-                embedding=query_embedding,
-                verdict=local_context.get("verdict", ""),
-                sources=local_context.get("sources", []),
-                platform_message_id=sent_message_id,
-            )
-            return
 
         elif should_use_refined_local(local_context):
             old_query = local_context.get("query", "Inconnue")
@@ -1102,7 +1108,7 @@ async def process_whatsapp_message(
                 chat_id=phone_number,
                 query=query,
                 embedding=query_embedding,
-                verdict=verdict,
+                verdict=(body or verdict or "").strip(),
                 sources=sources,
                 platform_message_id=sent_message_id,
             )
@@ -1155,16 +1161,18 @@ async def process_whatsapp_image(
             logger.error("Tokens WhatsApp manquants")
             return
 
+    phone_number = normalize_memory_chat_id(phone_number)
     platform_key = f"whatsapp:{transport}"
-    if not await memory_service.claim_inbound_message(platform_key, wa_message_id):
+    if not await memory_service.claim_whatsapp_message(
+        phone_number, wa_message_id, platform=platform_key
+    ):
         logger.info(
-            "[Dedup] WhatsApp ignoré (déjà traité) transport=%s id=%s",
+            "[Dedup] WhatsApp ignoré (déjà traité) transport=%s chat=%s id=%s",
             transport,
+            phone_number[:40],
             (wa_message_id or "")[:40],
         )
         return
-
-    await _whatsapp_mark_read_and_show_typing(wa_message_id)
 
     base_headers: dict[str, str] = {}
     if transport != "whapi":
@@ -1242,6 +1250,7 @@ async def process_whatsapp_image(
             logger.info("[WhatsApp] Texte OCR extrait (%s): %.80s…", phone_number, extracted_text)
 
             query_embedding = None
+            similar_context = None
             if conversational_memory_enabled():
                 try:
                     query_embedding = embedding_service.generate(combined_query)
@@ -1255,6 +1264,10 @@ async def process_whatsapp_image(
                         phone_number, query_embedding
                     )
                 if should_fast_replay_local(similar_context):
+                    logger.info(
+                        "[Whapi] Replay mémoire rapide image (sans RAG) chat=%s",
+                        phone_number[:40],
+                    )
                     await _send_whatsapp_text(
                         phone_number,
                         format_cached_replay_body(similar_context),
@@ -1268,6 +1281,8 @@ async def process_whatsapp_image(
                         sources=similar_context.get("sources", []),
                     )
                     return
+
+            await _whatsapp_mark_read_and_show_typing(wa_message_id)
 
             if require_topic_gate:
                 decision = await topic_gate_service.classify(combined_query)
@@ -1309,7 +1324,7 @@ async def process_whatsapp_image(
                         chat_id=phone_number,
                         query=combined_query,
                         embedding=query_embedding,
-                        verdict=verdict,
+                        verdict=(body or verdict or "").strip(),
                         sources=sources,
                     )
             except Exception as rag_exc:  # noqa: BLE001

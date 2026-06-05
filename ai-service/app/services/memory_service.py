@@ -40,11 +40,42 @@ def telegram_dedup_enabled() -> bool:
     return inbound_message_dedup_enabled()
 
 
+def normalize_memory_chat_id(chat_id: str) -> str:
+    """
+    Clé Redis stable pour WhatsApp (Whapi / Meta).
+    Évite les historiques fragmentés entre @c.us et @s.whatsapp.net.
+    """
+    cid = str(chat_id or "").strip()
+    if not cid:
+        return cid
+    if cid.endswith("@g.us"):
+        return cid
+    if cid.endswith("@s.whatsapp.net"):
+        return f"{cid.split('@', 1)[0]}@c.us"
+    if cid.endswith("@c.us"):
+        return cid
+    digits = cid.lstrip("+")
+    if digits.isdigit():
+        return f"{digits}@c.us"
+    return cid
+
+
 def telegram_dedup_key(chat_id: str, message_id: int | str | None) -> str | None:
     """Clé Redis : message_id Telegram n’est unique que par chat."""
     if message_id is None:
         return None
     cid = str(chat_id).strip()
+    mid = str(message_id).strip()
+    if not cid or not mid:
+        return None
+    return f"{cid}:{mid}"
+
+
+def whatsapp_dedup_key(chat_id: str, message_id: str | None) -> str | None:
+    """Clé Redis : message_id Whapi/Meta n’est unique que par chat."""
+    if message_id is None:
+        return None
+    cid = normalize_memory_chat_id(chat_id)
     mid = str(message_id).strip()
     if not cid or not mid:
         return None
@@ -161,6 +192,25 @@ class ConversationalMemoryService:
         self.similarity_threshold = float(os.getenv("MEMORY_SIMILARITY_THRESHOLD", "0.92"))
         self.inbound_dedup_ttl = int(os.getenv("WHATSAPP_INBOUND_DEDUP_TTL_SECONDS", "86400"))
 
+    async def claim_whatsapp_message(
+        self,
+        chat_id: str,
+        message_id: str | None,
+        *,
+        platform: str = "whatsapp",
+    ) -> bool:
+        """Dédup WhatsApp (webhook + file Whapi partagent chat_id:message_id)."""
+        if not inbound_message_dedup_enabled():
+            return True
+        dedup_id = whatsapp_dedup_key(chat_id, message_id)
+        if not dedup_id:
+            logger.warning(
+                "[Dedup] WhatsApp sans message_id (chat=%s) — dédup ignorée",
+                normalize_memory_chat_id(chat_id)[:40],
+            )
+            return True
+        return await self.claim_inbound_message(platform, dedup_id)
+
     async def claim_telegram_message(
         self,
         chat_id: str,
@@ -216,7 +266,7 @@ class ConversationalMemoryService:
             return True
 
     def _get_chat_key(self, chat_id: str) -> str:
-        return f"chat_history:{chat_id}"
+        return f"chat_history:{normalize_memory_chat_id(chat_id)}"
 
     def _get_msg_key(self, msg_hash: str) -> str:
         return f"msg_data:{msg_hash}"
@@ -238,6 +288,7 @@ class ConversationalMemoryService:
             return
         try:
             import hashlib
+            chat_id = normalize_memory_chat_id(chat_id)
             msg_hash = hashlib.md5(query.encode('utf-8')).hexdigest()
             
             msg_key = self._get_msg_key(msg_hash)
@@ -336,10 +387,12 @@ class ConversationalMemoryService:
         if not conversational_memory_enabled():
             return None
         try:
+            chat_id = normalize_memory_chat_id(chat_id)
             chat_key = self._get_chat_key(chat_id)
             msg_hashes = await self.redis_client.smembers(chat_key)
             
             if not msg_hashes:
+                logger.info("[Memory] Aucun historique pour chat=%s", chat_id[:60])
                 return None
             
             best_match = None
@@ -365,8 +418,23 @@ class ConversationalMemoryService:
                         best_match = data
             
             if best_match and max_similarity >= self.similarity_threshold:
-                logger.info(f"[Memory] Match trouvé (score={max_similarity:.2f}) dans le chat {chat_id}")
+                has_verdict = bool((best_match.get("verdict") or "").strip())
+                logger.info(
+                    "[Memory] Match chat=%s score=%.2f verdict=%s replay_ok=%s",
+                    chat_id[:60],
+                    max_similarity,
+                    "oui" if has_verdict else "vide",
+                    has_verdict and memory_fast_replay_enabled(),
+                )
                 return best_match
+
+            if best_match:
+                logger.info(
+                    "[Memory] Sujet proche mais sous seuil chat=%s score=%.2f (seuil=%.2f)",
+                    chat_id[:60],
+                    max_similarity,
+                    self.similarity_threshold,
+                )
                 
         except Exception as e:
             logger.error(f"[Memory] Erreur search_similar: {e}")
