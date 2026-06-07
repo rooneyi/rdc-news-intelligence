@@ -7,11 +7,14 @@ export type FastApiJsonBody = {
   [key: string]: unknown;
 };
 
+/** URL FastAPI pour les routes API Next (serveur uniquement). */
 export function getFastApiBaseUrl(): string {
-  return (process.env.NEXT_PUBLIC_FASTAPI_URL ?? "http://127.0.0.1:8000").replace(
-    /\/$/,
-    "",
-  );
+  // FASTAPI_URL = runtime (PM2 / .env.local), sans rebuild si le port change.
+  const raw =
+    process.env.FASTAPI_URL?.trim() ||
+    process.env.NEXT_PUBLIC_FASTAPI_URL?.trim() ||
+    "http://127.0.0.1:8000";
+  return raw.replace(/\/$/, "");
 }
 
 function isHtmlBody(text: string): boolean {
@@ -57,9 +60,12 @@ export function wrapFastApiContactError(err: unknown): string {
     low.includes("econnrefused") ||
     low.includes("connect econnrefused")
   ) {
+    const base = getFastApiBaseUrl();
     return (
-      `FastAPI injoignable sur ${getFastApiBaseUrl()}. ` +
-      `Redémarre: pm2 restart rdc-ai-service — test: curl -s http://127.0.0.1:8000/health`
+      `FastAPI injoignable sur ${base} (connexion refusée — rien n'écoute sur ce port). ` +
+      `Vérifie: pm2 status rdc-ai-service (doit être « online », pas « errored ») ; ` +
+      `curl -s ${base}/health ; si APP_PORT≠8000, mets FASTAPI_URL=http://127.0.0.1:<port> dans frontend/.env.local puis pm2 restart rdc-frontend. ` +
+      `Réparation: cd ai-service && ./scripts/fix_starlette_pin.sh ou ./scripts/admin_clean_start.sh`
     );
   }
   return message;
