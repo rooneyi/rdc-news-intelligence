@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const FASTAPI_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL ?? "http://127.0.0.1:8000";
+import {
+  getFastApiBaseUrl,
+  readFastApiJson,
+  wrapFastApiContactError,
+} from "@/lib/fastapi-upstream";
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,14 +16,14 @@ export async function POST(request: NextRequest) {
 
     console.log(`[API/RAG] Web request: "${query.slice(0, 80)}..."`);
 
-    const upstream = await fetch(`${FASTAPI_BASE_URL}/rag`, {
+    const upstream = await fetch(`${getFastApiBaseUrl()}/rag`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query, top_k: 5, channel: "web" }),
       cache: "no-store",
     });
 
-    const payload = await upstream.json();
+    const payload = await readFastApiJson(upstream);
 
     if (!upstream.ok) {
       console.error(`[API/RAG] FastAPI error:`, payload);
@@ -35,7 +38,7 @@ export async function POST(request: NextRequest) {
     console.log(`[API/RAG] Success: ${payload?.sources?.length ?? 0} sources`);
     return NextResponse.json(payload, { status: 200 });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Erreur inconnue.";
+    const msg = wrapFastApiContactError(err);
     console.error(`[API/RAG] Proxy error:`, msg);
     return NextResponse.json(
       { error: `Impossible de contacter FastAPI: ${msg}` },

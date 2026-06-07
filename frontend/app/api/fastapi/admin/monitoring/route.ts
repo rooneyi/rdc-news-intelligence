@@ -7,8 +7,11 @@ import {
   getAdminSessionSecret,
   verifyAdminSession,
 } from "@/lib/admin-auth";
-
-const FASTAPI_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL ?? "http://127.0.0.1:8000";
+import {
+  getFastApiBaseUrl,
+  readFastApiJson,
+  wrapFastApiContactError,
+} from "@/lib/fastapi-upstream";
 
 export const dynamic = "force-dynamic";
 
@@ -26,10 +29,10 @@ export async function GET() {
   }
 
   try {
-    const upstream = await fetch(`${FASTAPI_BASE_URL}/admin/monitoring`, {
+    const upstream = await fetch(`${getFastApiBaseUrl()}/admin/monitoring`, {
       cache: "no-store",
     });
-    const payload = await upstream.json();
+    const payload = await readFastApiJson(upstream);
     if (!upstream.ok) {
       return NextResponse.json(
         { error: payload?.detail ?? payload?.error ?? "Erreur FastAPI." },
@@ -38,7 +41,7 @@ export async function GET() {
     }
     return NextResponse.json(payload, { status: 200 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Erreur inconnue";
+    const message = wrapFastApiContactError(err);
     return NextResponse.json(
       { error: `Impossible de contacter FastAPI: ${message}` },
       { status: 502 },

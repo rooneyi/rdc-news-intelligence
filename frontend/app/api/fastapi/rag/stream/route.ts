@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Agent, fetch as undiciFetch } from "undici";
+import {
+  fastApiMisconfigMessage,
+  getFastApiBaseUrl,
+  wrapFastApiContactError,
+} from "@/lib/fastapi-upstream";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const FASTAPI_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL ?? "http://127.0.0.1:8000";
 
 /**
  * Le fetch global Node (Undici) coupe le flux après ~300 s (UND_ERR_BODY_TIMEOUT).
@@ -25,7 +28,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Question vide." }, { status: 400 });
     }
 
-    const upstream = await undiciFetch(`${FASTAPI_BASE_URL}/rag/stream`, {
+    const upstream = await undiciFetch(`${getFastApiBaseUrl()}/rag/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query, top_k: 5, channel: "web" }),
@@ -34,9 +37,16 @@ export async function POST(request: NextRequest) {
 
     if (!upstream.ok) {
       const text = await upstream.text();
+      const trimmed = text.trimStart().toLowerCase();
+      if (trimmed.startsWith("<!doctype") || trimmed.startsWith("<html")) {
+        return NextResponse.json(
+          { error: fastApiMisconfigMessage(upstream.status) },
+          { status: 502 },
+        );
+      }
       return NextResponse.json(
         { error: text || "Erreur FastAPI." },
-        { status: upstream.status }
+        { status: upstream.status },
       );
     }
 
@@ -56,7 +66,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Erreur inconnue.";
+    const msg = wrapFastApiContactError(err);
     return NextResponse.json(
       { error: `Impossible de contacter FastAPI: ${msg}` },
       { status: 502 }

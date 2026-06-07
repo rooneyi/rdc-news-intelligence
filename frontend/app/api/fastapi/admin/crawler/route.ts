@@ -7,8 +7,11 @@ import {
   getAdminSessionSecret,
   verifyAdminSession,
 } from "@/lib/admin-auth";
-
-const FASTAPI_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL ?? "http://127.0.0.1:8000";
+import {
+  getFastApiBaseUrl,
+  readFastApiJson,
+  wrapFastApiContactError,
+} from "@/lib/fastapi-upstream";
 
 export const dynamic = "force-dynamic";
 
@@ -35,10 +38,10 @@ export async function GET() {
   if (denied) return denied;
 
   try {
-    const upstream = await fetch(`${FASTAPI_BASE_URL}/admin/crawler/status`, {
+    const upstream = await fetch(`${getFastApiBaseUrl()}/admin/crawler/status`, {
       cache: "no-store",
     });
-    const payload = await upstream.json();
+    const payload = await readFastApiJson(upstream);
     if (!upstream.ok) {
       return NextResponse.json(
         { error: payload?.detail ?? payload?.error ?? "Erreur FastAPI." },
@@ -47,7 +50,7 @@ export async function GET() {
     }
     return NextResponse.json(payload, { status: 200 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Erreur inconnue";
+    const message = wrapFastApiContactError(err);
     return NextResponse.json(
       { error: `Impossible de contacter FastAPI: ${message}` },
       { status: 502 },
@@ -67,7 +70,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const upstream = await fetch(`${FASTAPI_BASE_URL}/admin/crawler/run`, {
+    const upstream = await fetch(`${getFastApiBaseUrl()}/admin/crawler/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -77,7 +80,7 @@ export async function POST(request: NextRequest) {
         run_reembedding: body.run_reembedding !== false,
       }),
     });
-    const payload = await upstream.json();
+    const payload = await readFastApiJson(upstream);
     if (!upstream.ok) {
       const detail =
         typeof payload?.detail === "string"
@@ -87,7 +90,7 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json(payload, { status: 200 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Erreur inconnue";
+    const message = wrapFastApiContactError(err);
     return NextResponse.json(
       { error: `Impossible de contacter FastAPI: ${message}` },
       { status: 502 },
