@@ -398,7 +398,11 @@ def _bootstrap() -> None:
         if os.getenv("ENABLE_CRON_JOBS", "").lower() in {"1", "true", "yes"}:
             asyncio.create_task(start_cron_jobs())
 
-        if os.getenv("ENABLE_TELEGRAM_POLLING", "").lower() in {"1", "true", "yes"}:
+        telegram_poll = (
+            os.getenv("ENABLE_TELEGRAM_POLLING", "").strip().lower()
+            or os.getenv("TELEGRAM_POLLING", "").strip().lower()
+        )
+        if telegram_poll in {"1", "true", "yes"}:
             asyncio.create_task(run_telegram_polling())
             logger.warning(
                 "[Startup][Telegram] Polling actif — désactive le webhook Telegram chez BotFather "
