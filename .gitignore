@@ -89,7 +89,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# Racine seulement (ne pas ignorer frontend/lib/)
+/lib/
 lib64/
 parts/
 sdist/

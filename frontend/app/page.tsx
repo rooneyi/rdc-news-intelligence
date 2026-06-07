@@ -1,12 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Database, Shield, Zap } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Activity, ArrowRight, Database, Shield } from "lucide-react";
 import { getAppDisplayName } from "@/lib/app-config";
 
 const appName = getAppDisplayName();
 
+type PublicStats = {
+  sources: number | null;
+  articles: number | null;
+  coverage: number | null;
+};
+
 export default function HomePage() {
+  const [stats, setStats] = useState<PublicStats | null>(null);
+
+  useEffect(() => {
+    fetch("/api/public/stats")
+      .then((r) => r.json())
+      .then((d) => setStats(d as PublicStats))
+      .catch(() => setStats({ sources: null, articles: null, coverage: null }));
+  }, []);
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 py-6 md:px-8">
       <header className="rdc-card rdc-motion-in mb-8 flex items-center justify-between rounded-2xl px-5 py-3">
@@ -56,16 +71,30 @@ export default function HomePage() {
         <div className="rdc-card rdc-motion-in rdc-motion-delay-2 rounded-3xl p-5 md:p-6">
           <div className="mb-4 grid gap-3 sm:grid-cols-3">
             {[
-              { icon: <Database size={14} />, label: "Sources", value: "12+" },
-              { icon: <Zap size={14} />, label: "Verdict moyen", value: "< 8s" },
-              { icon: <Shield size={14} />, label: "Thèmes", value: "4" },
+              {
+                icon: <Database size={14} />,
+                label: "Sources",
+                value: stats?.sources != null ? String(stats.sources) : "—",
+              },
+              {
+                icon: <Activity size={14} />,
+                label: "Articles",
+                value: stats?.articles != null ? stats.articles.toLocaleString("fr-FR") : "—",
+              },
+              {
+                icon: <Shield size={14} />,
+                label: "Vectorisés",
+                value: stats?.coverage != null ? `${stats.coverage}%` : "—",
+              },
             ].map((item) => (
               <div key={item.label} className="rounded-xl border border-slate-500/20 bg-slate-800/40 p-3">
                 <div className="mb-2 flex items-center gap-2 text-slate-400">
                   {item.icon}
                   <span className="text-[11px] uppercase tracking-wider">{item.label}</span>
                 </div>
-                <p className="text-lg font-semibold text-slate-100">{item.value}</p>
+                <p className={`text-lg font-semibold ${stats == null ? "animate-pulse text-slate-500" : "text-slate-100"}`}>
+                  {item.value}
+                </p>
               </div>
             ))}
           </div>
