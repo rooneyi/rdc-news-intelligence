@@ -950,11 +950,19 @@ async def run_whapi_queue_polling() -> None:
                 resp = await client.post(queue_pop_url, headers=headers)
 
             if resp.status_code >= 400:
+                preview = (resp.text or "").replace("\n", " ")
+                extra = ""
+                if "<!doctype" in preview.lower() or "<html" in preview.lower():
+                    extra = (
+                        " — page HTML : le port 8000 ne répond pas par FastAPI "
+                        "(uvicorn orphelin ou autre service). Lance: ./scripts/fix_port_8000.sh"
+                    )
                 logger.warning(
-                    "[Whapi Queue] HTTP %s sur queue pop — utilise WHAPI_QUEUE_POP_URL="
-                    "http://127.0.0.1:<port>/webhooks/whapi/queue/pop si FastAPI local. Aperçu: %.120s",
+                    "[Whapi Queue] HTTP %s sur queue pop%s — URL=%s Aperçu: %.120s",
                     resp.status_code,
-                    (resp.text or "").replace("\n", " "),
+                    extra,
+                    queue_pop_url,
+                    preview,
                 )
                 await asyncio.sleep(poll_interval)
                 continue
