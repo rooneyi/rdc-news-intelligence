@@ -70,10 +70,7 @@ if ss -tln 2>/dev/null | grep -q ":${PORT} "; then
   echo "  sudo fuser -v ${PORT}/tcp" >&2
   echo "  sudo fuser -k ${PORT}/tcp" >&2
   echo "  # ou change de port dans .env :" >&2
-  echo "  APP_PORT=8001" >&2
-  echo "  WHAPI_QUEUE_POP_URL=http://127.0.0.1:8001/webhooks/whapi/queue/pop" >&2
-  echo "  WHAPI_REPLY_RELAY_URL=http://127.0.0.1:8001/webhooks/whapi/reply-relay" >&2
-  echo "  puis ./scripts/pm2_reload_env.sh" >&2
+  echo "  ./scripts/switch_fastapi_port.sh 8001" >&2
   exit 1
 fi
 
