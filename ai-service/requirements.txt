@@ -8,8 +8,9 @@
 #   pip install torch --index-url https://download.pytorch.org/whl/cpu
 #   pip install -r requirements.txt
 
-# API
+# API (starlette<1.0 : FastAPI 0.115 utilise encore on_startup dans Router)
 fastapi>=0.115.0,<0.116.0
+starlette>=0.40.0,<1.0.0
 uvicorn[standard]>=0.30.0,<0.35.0
 python-dotenv>=1.0.0,<2
 pydantic>=2.5.0,<3
