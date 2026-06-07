@@ -70,7 +70,7 @@ function loadMergedEnv(base) {
   );
 
   if (fileOnly) {
-    console.log("[ecosystem] Variables : .env_file uniquement (RDC_ENV_FILE_ONLY)");
+    console.error("[ecosystem] Variables : .env_file uniquement (RDC_ENV_FILE_ONLY)");
     return { ...fromEnvFile };
   }
 
@@ -78,7 +78,7 @@ function loadMergedEnv(base) {
   const sources = [];
   if (Object.keys(fromEnvFile).length) sources.push(".env_file");
   if (Object.keys(fromDotEnv).length) sources.push(".env");
-  console.log(
+  console.error(
     "[ecosystem] Variables chargées :",
     sources.length ? sources.join(" + ") : "(aucun fichier)",
     `— ${Object.keys(merged).length} clés`,

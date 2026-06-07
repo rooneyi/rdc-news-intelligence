@@ -14,7 +14,7 @@ if [[ ! -f "${ROOT}/.env" && ! -f "${ROOT}/.env_file" ]]; then
   exit 1
 fi
 
-PORT="$(node -e "console.log(require('./ecosystem.config.cjs').apps[0].env.APP_PORT||8000)")"
+PORT="$("${ROOT}/scripts/read_app_port.sh")"
 
 echo "=== Rechargement PM2 avec variables .env_file + .env ==="
 node -e "

@@ -1,27 +1,49 @@
 #!/usr/bin/env bash
-# Libère le port FastAPI (8000 par défaut) et redémarre un seul rdc-ai-service.
+# Libère le port FastAPI et redémarre un seul rdc-ai-service.
 #
 # Symptômes :
 #   - address already in use ('0.0.0.0', 8000)
 #   - [Whapi Queue] HTTP 400 + page HTML sur queue/pop
+#   - curl /health ne renvoie pas du JSON rdc-ai-service
 #
 # Usage VPS :
-#   cd ~/web/rooney-rdc.rooneykalumba.tech/public_html/rdc-news-intelligence/ai-service
+#   cd ~/web/.../rdc-news-intelligence/ai-service
 #   ./scripts/fix_port_8000.sh
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT}"
 
-PORT="$(node -e "console.log(require('./ecosystem.config.cjs').apps[0].env.APP_PORT||8000)")"
+PORT="$("${ROOT}/scripts/read_app_port.sh")"
 
-echo "=== Port ${PORT} — processus en écoute ==="
-if command -v ss >/dev/null 2>&1; then
-  ss -tlnp 2>/dev/null | grep ":${PORT} " || echo "(aucun listener ss)"
-elif command -v lsof >/dev/null 2>&1; then
-  lsof -i ":${PORT}" -sTCP:LISTEN 2>/dev/null || echo "(aucun listener lsof)"
-else
-  echo "(installe ss ou lsof pour le diagnostic)"
+is_fastapi_health() {
+  local body
+  body="$(curl -sS --max-time 4 "http://127.0.0.1:${PORT}/health" 2>/dev/null || true)"
+  echo "${body}" | grep -q '"service"[[:space:]]*:[[:space:]]*"rdc-ai-service"'
+}
+
+echo "=== Port ${PORT} — écoute ==="
+ss -tln 2>/dev/null | grep ":${PORT} " || echo "(aucun listener)"
+
+if is_fastapi_health; then
+  echo "FastAPI (rdc-ai-service) répond déjà correctement sur :${PORT}/health"
+  echo "Relance propre PM2 seulement..."
+  exec "${ROOT}/scripts/pm2_reload_env.sh"
+fi
+
+if curl -sS --max-time 4 "http://127.0.0.1:${PORT}/health" 2>/dev/null | grep -qi '<!doctype html'; then
+  echo ""
+  echo "ATTENTION : un AUTRE programme occupe le port ${PORT} (page HTML, pas FastAPI)."
+  echo "Ce n'est pas rdc-ai-service — d'où les erreurs Whapi 400."
+fi
+
+echo ""
+echo "=== PID sur le port ${PORT} ==="
+if command -v fuser >/dev/null 2>&1; then
+  fuser -v "${PORT}/tcp" 2>/dev/null || echo "(fuser : aucun PID visible — essaie: sudo fuser -v ${PORT}/tcp)"
+fi
+if command -v lsof >/dev/null 2>&1; then
+  lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN 2>/dev/null || true
 fi
 
 echo ""
@@ -34,17 +56,24 @@ pm2 delete rdc-ai-service 2>/dev/null || pm2 stop rdc-ai-service 2>/dev/null || 
 sleep 2
 
 echo ""
-echo "=== Libération port ${PORT} (uvicorn / python orphelins) ==="
+echo "=== Libération port ${PORT} ==="
 if command -v fuser >/dev/null 2>&1; then
   fuser -k "${PORT}/tcp" 2>/dev/null || true
 fi
 pkill -f "uvicorn app.main:app.*--port ${PORT}" 2>/dev/null || true
 sleep 2
 
-if command -v ss >/dev/null 2>&1 && ss -tlnp 2>/dev/null | grep -q ":${PORT} "; then
-  echo "ERREUR : le port ${PORT} est encore occupé. PID(s) :" >&2
-  ss -tlnp 2>/dev/null | grep ":${PORT} " >&2 || true
-  echo "Tue manuellement : kill <pid> puis relance ./scripts/pm2_reload_env.sh" >&2
+if ss -tln 2>/dev/null | grep -q ":${PORT} "; then
+  echo ""
+  echo "ERREUR : le port ${PORT} est encore occupé (processus hors PM2 ou droits insuffisants)." >&2
+  echo "Essaie :" >&2
+  echo "  sudo fuser -v ${PORT}/tcp" >&2
+  echo "  sudo fuser -k ${PORT}/tcp" >&2
+  echo "  # ou change de port dans .env :" >&2
+  echo "  APP_PORT=8001" >&2
+  echo "  WHAPI_QUEUE_POP_URL=http://127.0.0.1:8001/webhooks/whapi/queue/pop" >&2
+  echo "  WHAPI_REPLY_RELAY_URL=http://127.0.0.1:8001/webhooks/whapi/reply-relay" >&2
+  echo "  puis ./scripts/pm2_reload_env.sh" >&2
   exit 1
 fi
 
