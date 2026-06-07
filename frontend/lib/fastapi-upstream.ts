@@ -1,3 +1,12 @@
+/** Réponse JSON typique renvoyée par FastAPI (RAG, admin, erreurs). */
+export type FastApiJsonBody = {
+  detail?: string;
+  error?: string;
+  sources?: unknown[];
+  verdict?: string;
+  [key: string]: unknown;
+};
+
 export function getFastApiBaseUrl(): string {
   return (process.env.NEXT_PUBLIC_FASTAPI_URL ?? "http://127.0.0.1:8000").replace(
     /\/$/,
@@ -19,7 +28,7 @@ export function fastApiMisconfigMessage(status: number, baseUrl = getFastApiBase
   );
 }
 
-export async function readFastApiJson<T = Record<string, unknown>>(
+export async function readFastApiJson<T = FastApiJsonBody>(
   upstream: Response,
 ): Promise<T> {
   const baseUrl = getFastApiBaseUrl();

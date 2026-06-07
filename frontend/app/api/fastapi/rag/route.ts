@@ -35,7 +35,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[API/RAG] Success: ${payload?.sources?.length ?? 0} sources`);
+    const sourceCount = Array.isArray(payload.sources) ? payload.sources.length : 0;
+    console.log(`[API/RAG] Success: ${sourceCount} sources`);
     return NextResponse.json(payload, { status: 200 });
   } catch (err) {
     const msg = wrapFastApiContactError(err);
