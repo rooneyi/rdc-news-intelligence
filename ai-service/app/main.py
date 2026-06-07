@@ -81,6 +81,19 @@ app = FastAPI(
     version="1.0.0",
 )
 
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+    Instrumentator(
+        excluded_handlers=["/metrics", "/health"],
+        should_respect_env_var=False,
+    ).instrument(app).expose(app)
+    logger.info("[Metrics] Endpoint /metrics Prometheus actif")
+except ImportError:
+    logger.warning(
+        "[Metrics] prometheus-fastapi-instrumentator absent — /metrics désactivé. "
+        "Installe avec : pip install prometheus-fastapi-instrumentator"
+    )
+
 _skip_health = os.getenv("RDC_HTTP_LOG_SKIP_HEALTH", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
@@ -192,23 +205,142 @@ def _log_whapi_delivery_hints() -> None:
         )
 
 
+async def _check_redis() -> dict:
+    import redis.asyncio as aioredis
+    from app.core.config import REDIS_URL
+    t0 = time.perf_counter()
+    try:
+        r = aioredis.from_url(REDIS_URL, decode_responses=True)
+        await asyncio.wait_for(r.ping(), timeout=2.0)
+        await r.aclose()
+        return {"ok": True, "latency_ms": round((time.perf_counter() - t0) * 1000, 1)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:120]}
+
+
+async def _check_postgres() -> dict:
+    import asyncio
+    from app.db.session import get_db_connection
+    t0 = time.perf_counter()
+    try:
+        def _ping():
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            conn.close()
+        await asyncio.wait_for(asyncio.to_thread(_ping), timeout=3.0)
+        return {"ok": True, "latency_ms": round((time.perf_counter() - t0) * 1000, 1)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:120]}
+
+
+async def _check_ollama() -> dict:
+    import httpx
+    host = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+    t0 = time.perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"{host}/api/tags")
+        ok = resp.status_code == 200
+        return {"ok": ok, "latency_ms": round((time.perf_counter() - t0) * 1000, 1)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:120]}
+
+
+async def _check_chromadb() -> dict:
+    t0 = time.perf_counter()
+    try:
+        from app.services.vector_store_service import VectorStoreService
+        count = await asyncio.wait_for(
+            asyncio.to_thread(lambda: VectorStoreService().collection.count()),
+            timeout=3.0,
+        )
+        return {"ok": True, "latency_ms": round((time.perf_counter() - t0) * 1000, 1), "doc_count": count}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:120]}
+
+
 @app.get("/health", tags=["Health"], summary="Service health check")
 async def health_check():
     """
     Toujours disponible si ce module se charge.
     `ready: false` indique que le bootstrap complet (RAG, webhooks) a échoué — voir `error`.
+    Vérifie activement Redis, PostgreSQL, Ollama et ChromaDB avec timeout court.
     """
     from app.services.ocr_service import OCRService
 
+    redis_status, postgres_status, ollama_status, chroma_status = await asyncio.gather(
+        _check_redis(),
+        _check_postgres(),
+        _check_ollama(),
+        _check_chromadb(),
+        return_exceptions=False,
+    )
+
+    all_ok = all(
+        s.get("ok") for s in [redis_status, postgres_status, ollama_status, chroma_status]
+    )
+
     body: dict = {
-        "status": "ok",
+        "status": "ok" if all_ok else "degraded",
         "service": "rdc-ai-service",
         "ready": app.state.bootstrap_ok,
         "ocr_tesseract": OCRService.is_tesseract_available(),
+        "dependencies": {
+            "redis": redis_status,
+            "postgres": postgres_status,
+            "ollama": ollama_status,
+            "chromadb": chroma_status,
+        },
     }
     if app.state.bootstrap_error:
         body["error"] = app.state.bootstrap_error
-    return JSONResponse(content=body)
+    status_code = 200 if app.state.bootstrap_ok else 503
+    return JSONResponse(content=body, status_code=status_code)
+
+
+def _validate_startup_config() -> None:
+    """Vérifie les variables d'environnement critiques et logue des avertissements clairs."""
+    issues: list[str] = []
+
+    # Token de vérification Meta — la valeur par défaut est publique et dangereuse
+    verify_token = os.getenv("WHATSAPP_VERIFY_TOKEN", "").strip()
+    if not verify_token:
+        issues.append(
+            "WHATSAPP_VERIFY_TOKEN manquant — n'importe qui peut valider le webhook Meta. "
+            "Définis une valeur secrète dans .env_file."
+        )
+    elif verify_token == "rdc_news_token":
+        issues.append(
+            "WHATSAPP_VERIFY_TOKEN utilise la valeur par défaut publique 'rdc_news_token'. "
+            "Change-la pour une valeur secrète unique dans .env_file."
+        )
+
+    # Token Telegram
+    if not os.getenv("TELEGRAM_BOT_TOKEN", "").strip():
+        logger.warning("[Config] TELEGRAM_BOT_TOKEN absent — webhook/polling Telegram inopérant.")
+
+    # Base de données
+    from app.core.config import DB_HOST, DB_NAME, DB_USER, DB_PASSWORD
+    if not all([DB_HOST, DB_NAME, DB_USER, DB_PASSWORD]):
+        issues.append(
+            "Variables DB_* incomplètes (DB_HOST, DB_NAME, DB_USER, DB_PASSWORD). "
+            "Vérifie .env_file."
+        )
+
+    # Redis
+    if not os.getenv("REDIS_URL", "").strip():
+        logger.warning("[Config] REDIS_URL absent — cache, dedup et rate limiting désactivés.")
+
+    for issue in issues:
+        logger.error("[Config] ⚠️  %s", issue)
+
+    if issues:
+        logger.error(
+            "[Config] %s problème(s) de configuration détecté(s) — "
+            "certaines fonctionnalités peuvent être non sécurisées ou inopérantes.",
+            len(issues),
+        )
 
 
 def _bootstrap() -> None:
@@ -225,13 +357,43 @@ def _bootstrap() -> None:
     app.include_router(articles_router)
     app.include_router(webhooks_router, prefix="/webhooks", tags=["Webhooks"])
 
+    async def _warmup_ollama() -> None:
+        """Envoie un prompt minimal à Ollama pour forcer le chargement du modèle en mémoire.
+        Évite le cold start de 3-5 min sur la première vraie requête utilisateur."""
+        import httpx
+        host = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+        model = os.getenv("OLLAMA_MODEL", "mistral")
+        from app.services.llm_service import normalize_ollama_keep_alive
+
+        keep_alive = normalize_ollama_keep_alive(os.getenv("OLLAMA_KEEP_ALIVE", "-1"))
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    f"{host}/api/generate",
+                    json={
+                        "model": model,
+                        "prompt": "Bonjour",
+                        "stream": False,
+                        "keep_alive": keep_alive,
+                        "num_predict": 1,
+                        "options": {"num_ctx": 128, "num_thread": int(os.getenv("OLLAMA_NUM_THREAD", "4"))},
+                    },
+                )
+                if resp.status_code == 200:
+                    logger.info("[Startup] Warmup Ollama OK — modèle ‘%s’ chargé en mémoire", model)
+                else:
+                    logger.warning("[Startup] Warmup Ollama statut=%s — modèle peut nécessiter un cold start", resp.status_code)
+        except Exception as e:
+            logger.warning("[Startup] Warmup Ollama échoué (%s) — service démarré quand même", e)
+
     @app.on_event("startup")
     async def startup_event():
-        # Uvicorn peut reconfigurer le logging après l’import — réattache le fichier une fois l’app démarrée.
         _attach_project_file_handler(logging.getLogger().getEffectiveLevel())
         logger.info("[Startup] Service prêt — traces HTTP dans ce fichier et la console.")
+        _validate_startup_config()
         _log_whatsapp_delivery_hints()
         _log_whapi_delivery_hints()
+        asyncio.create_task(_warmup_ollama())
 
         if os.getenv("ENABLE_CRON_JOBS", "").lower() in {"1", "true", "yes"}:
             asyncio.create_task(start_cron_jobs())
@@ -260,6 +422,8 @@ def _bootstrap() -> None:
     @app.on_event("shutdown")
     def shutdown_event():
         stop_cron_jobs()
+        from app.db.session import close_pool
+        close_pool()
 
 
 try:

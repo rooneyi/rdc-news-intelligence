@@ -1,3 +1,11 @@
+# Secrets — ne JAMAIS committer ces fichiers
+ai-service/.env
+ai-service/.env_file
+ai-service/.env.*
+frontend/.env
+frontend/.env.local
+frontend/.env*.local
+
 # Ignorer le dossier models_cache
 models_cache/
 ai-service/models_cache/

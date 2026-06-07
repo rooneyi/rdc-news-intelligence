@@ -150,7 +150,11 @@
     "/tmp/rdc-next-dev-46710/types/**/*.ts",
     "/tmp/rdc-next-dev-46710/dev/types/**/*.ts",
     "/tmp/rdc-next-dev-139133/types/**/*.ts",
-    "/tmp/rdc-next-dev-139133/dev/types/**/*.ts"
+    "/tmp/rdc-next-dev-139133/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-349844/types/**/*.ts",
+    "/tmp/rdc-next-dev-349844/dev/types/**/*.ts",
+    "/tmp/rdc-next-dev-364782/types/**/*.ts",
+    "/tmp/rdc-next-dev-364782/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

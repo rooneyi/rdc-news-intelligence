@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import json
 import logging
 import re
@@ -24,6 +26,12 @@ from app.services.whapi_cloud import (
     whapi_webhook_secret_expected,
 )
 from app.services.whatsapp_media import WhatsappImageLoadError, load_whatsapp_image_bytes
+from app.services.rate_limiter import is_rate_limited
+from app.services.input_sanitizer import sanitize as sanitize_input
+try:
+    from app.services.metrics import MESSAGES_TOTAL as _MESSAGES_TOTAL
+except ImportError:
+    _MESSAGES_TOTAL = None  # type: ignore[assignment]
 import httpx
 import os
 import asyncio
@@ -31,9 +39,10 @@ import redis.asyncio as redis
 from collections import deque
 from app.core.config import REDIS_URL
 
-# Redis pour la file d'attente (Orchestrateur) et la mémoire
+# Redis pour les files d'attente et la mémoire
 redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 WHAPI_QUEUE_KEY = "whapi_payload_queue"
+WHATSAPP_META_QUEUE_KEY = "whatsapp_meta_payload_queue"
 
 # Services
 ocr_service = OCRService()
@@ -103,16 +112,39 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _verify_meta_signature(raw_body: bytes, signature_header: str) -> bool:
+    """
+    Vérifie la signature HMAC-SHA256 envoyée par Meta sur chaque webhook.
+    Header : X-Hub-Signature-256: sha256=<hex>
+    Clé    : WHATSAPP_APP_SECRET (depuis Meta App Dashboard → App Secret)
+    """
+    app_secret = (os.getenv("WHATSAPP_APP_SECRET") or "").strip()
+    if not app_secret:
+        # Si le secret n'est pas configuré, on laisse passer avec un avertissement.
+        # Configurer WHATSAPP_APP_SECRET est fortement recommandé en production.
+        logger.warning("[WhatsApp] WHATSAPP_APP_SECRET absent — signature Meta non vérifiée.")
+        return True
+
+    if not signature_header.startswith("sha256="):
+        logger.warning("[WhatsApp] Signature Meta absente ou format invalide.")
+        return False
+
+    expected = hmac.new(
+        app_secret.encode(), raw_body, hashlib.sha256
+    ).hexdigest()
+    received = signature_header[len("sha256="):]
+    valid = hmac.compare_digest(expected, received)
+    if not valid:
+        logger.error("[WhatsApp] Signature HMAC invalide — payload rejeté.")
+    return valid
+
+
 def _whatsapp_credentials() -> tuple[str, str]:
     """Token et phone id sans espaces / retours ligne (erreurs Meta fréquentes si .env mal collé)."""
     return (
         (os.getenv("WHATSAPP_TOKEN") or "").strip(),
         (os.getenv("WHATSAPP_PHONE_ID") or "").strip(),
     )
-ocr_service = OCRService()
-topic_gate_service = TopicGateService()
-_whatsapp_queue: deque[dict] = deque()
-_whatsapp_queue_lock = asyncio.Lock()
 
 _whapi_queue: deque[dict] = deque()
 _whapi_queue_lock = asyncio.Lock()
@@ -211,6 +243,15 @@ async def process_telegram_message(
             )
             return
 
+    if await is_rate_limited(chat_id, platform="telegram"):
+        logger.info("[Telegram] Rate limit atteint — message silencieusement ignoré chat=%s", chat_id)
+        return
+
+    query = sanitize_input(query, channel="telegram")
+    if not query:
+        logger.info("[Telegram] Message vide après sanitisation chat=%s", chat_id)
+        return
+
     base_url = f"https://api.telegram.org/bot{bot_token}"
 
     query_embedding = embedding_service.generate(query)
@@ -282,22 +323,24 @@ async def process_telegram_message(
                     old_verdict=old_verdict,
                     group_count=group_count,
                     channel="telegram",
+                    query_embedding=query_embedding,
                 )
                 reply_to_id = local_context.get("root_message_id") if local_context else None
-            
+
             elif should_use_refined_local(local_context):
                 old_query = local_context.get("query", "Inconnue")
                 old_verdict = local_context.get("verdict", "")
                 reply_to_id = local_context.get("root_message_id")
-                
+
                 logger.info("[Telegram] Génération d'une réponse raffinée locale.")
                 text_buffer = repeat_note_prefix()
-                
+
                 gen = rag_service.generate_refined_answer_stream(
                     query=query,
                     old_query=old_query,
                     old_verdict=old_verdict,
                     channel="telegram",
+                    query_embedding=query_embedding,
                 )
             else:
                 if should_show_repeat_indicator(local_context):
@@ -306,7 +349,7 @@ async def process_telegram_message(
                     logger.info("[Telegram] Sujet proche déjà vu — RAG standard + indicateur 💡")
                 else:
                     reply_to_id = None
-                gen = rag_service.generate_answer_stream(query, channel="telegram")
+                gen = rag_service.generate_answer_stream(query, channel="telegram", query_embedding=query_embedding)
 
             # Si on a un message racine locale, on essaie de citer
             if reply_to_id:
@@ -513,111 +556,54 @@ async def _send_whatsapp_long_body(
     reply_to_id: str | None = None,
 ) -> str | None:
     """
-    Envoie un texte complet et retourne l'ID du message.
+    Envoie un texte complet en découpant en chunks si nécessaire.
+    Retourne l'ID du premier message envoyé.
     """
     body = (body or "").strip()
     if not body:
         return None
-    
+
+    chunk_min = int(os.getenv("WHATSAPP_CHUNK_MIN_CHARS", "220"))
     chunk_max = int(os.getenv("WHATSAPP_CHUNK_MAX_CHARS", "3800"))
+
     if len(body) <= chunk_max:
         return await _send_whatsapp_text(phone_number, body, transport=transport, reply_to_id=reply_to_id)
 
-    # Pour les messages longs, on répond au message racine avec le premier chunk
-    first_chunk = body[:chunk_max] # Découpage simplifié pour l'exemple
-    return await _send_whatsapp_text(phone_number, first_chunk, transport=transport, reply_to_id=reply_to_id)
-
-
-
-async def _stream_whatsapp_response(
-    phone_number: str,
-    query: str,
-    *,
-    wa_message_id: str | None = None,
-    transport: str = "meta",
-) -> None:
-    rag_service = RAGService()
-    text_buffer = ""
-    sources: list[dict] = []
-    # Premier envoi plus rapide pendant le stream (évite l’attente « vide » trop longue).
-    chunk_min = int(os.getenv("WHATSAPP_CHUNK_MIN_CHARS", "220"))
-    chunk_max = int(os.getenv("WHATSAPP_CHUNK_MAX_CHARS", "3800"))
-    # Par défaut: envoi pendant la génération (streaming). false = tout à la fin (une ou peu de bulles).
-    stream_while = os.getenv("WHATSAPP_STREAM_WHILE_GENERATING", "true").lower() not in {
-        "0",
-        "false",
-        "no",
-        "off",
-    }
-
-    await _whatsapp_mark_read_and_show_typing(wa_message_id)
-    if not wa_message_id and os.getenv("WHATSAPP_ACK_IF_NO_TYPING", "true").lower() in {
-        "1",
-        "true",
-        "yes",
-    }:
-        await _send_whatsapp_text(phone_number, "🔎 Analyse en cours…", transport=transport)
-
-    async for event in rag_service.generate_answer_stream(
-        query,
-        top_k=int(os.getenv("WHATSAPP_TOP_K", "3")),
-        channel="whatsapp",
-    ):
-        event_type = event.get("type")
-
-        if event_type == "sources":
-            sources = event.get("sources", [])
-            continue
-
-        if event_type == "summary_chunk":
-            text_buffer += event.get("text", "")
-            if stream_while:
-                while len(text_buffer) >= chunk_min:
-                    to_send, text_buffer = _pop_whatsapp_chunk(
-                        text_buffer, chunk_min, chunk_max, force=False
-                    )
-                    if not to_send:
-                        break
-                    await _send_whatsapp_text(phone_number, to_send, transport=transport)
-            continue
-
-        if event_type == "error":
-            await _send_whatsapp_text(
-                phone_number,
-                event.get("message", "Erreur interne RAG"),
-                transport=transport,
+    first_message_id: str | None = None
+    remaining = body
+    is_first = True
+    while remaining.strip():
+        if len(remaining) <= chunk_max:
+            sent_id = await _send_whatsapp_text(
+                phone_number, remaining.strip(), transport=transport,
+                reply_to_id=reply_to_id if is_first else None,
             )
-            return
-
-        if event_type == "done":
+            if is_first:
+                first_message_id = sent_id
             break
 
-    if stream_while:
-        while text_buffer.strip():
-            if len(text_buffer) < chunk_min:
-                await _send_whatsapp_text(phone_number, text_buffer.strip(), transport=transport)
-                break
-            to_send, text_buffer = _pop_whatsapp_chunk(
-                text_buffer, chunk_min, chunk_max, force=True
+        to_send, remaining = _pop_whatsapp_chunk(remaining, chunk_min, chunk_max, force=not is_first)
+        if not to_send:
+            sent_id = await _send_whatsapp_text(
+                phone_number, remaining.strip(), transport=transport,
+                reply_to_id=reply_to_id if is_first else None,
             )
-            if not to_send:
-                await _send_whatsapp_text(phone_number, text_buffer.strip(), transport=transport)
-                break
-            await _send_whatsapp_text(phone_number, to_send, transport=transport)
-    else:
-        await _send_whatsapp_long_body(phone_number, text_buffer, transport=transport)
+            if is_first:
+                first_message_id = sent_id
+            break
 
-    if sources:
-        lines = []
-        for i, source in enumerate(sources, 1):
-            title = source.get("title") or "Source locale"
-            url = source.get("url") or "(lien indisponible)"
-            lines.append(f"[{i}] {title} - {url}")
-        await _send_whatsapp_long_body(
-            phone_number,
-            "🔗 SOURCES LOCALES :\n" + "\n".join(lines),
-            transport=transport,
+        sent_id = await _send_whatsapp_text(
+            phone_number, to_send, transport=transport,
+            reply_to_id=reply_to_id if is_first else None,
         )
+        if is_first:
+            first_message_id = sent_id
+            is_first = False
+
+    return first_message_id
+
+
+
 
 
 async def _forward_whatsapp_payload(payload: dict) -> None:
@@ -658,21 +644,28 @@ def _queue_auth_ok(token_from_header: str) -> bool:
 
 
 async def _enqueue_whatsapp_payload(payload: dict) -> int:
-    async with _whatsapp_queue_lock:
-        _whatsapp_queue.append(payload)
-        return len(_whatsapp_queue)
+    try:
+        return await redis_client.rpush(WHATSAPP_META_QUEUE_KEY, json.dumps(payload))
+    except Exception as e:
+        logger.error("[WhatsApp Meta Queue] Erreur enqueue Redis: %s", e)
+        return 0
 
 
 async def _pop_whatsapp_payload() -> dict | None:
-    async with _whatsapp_queue_lock:
-        if not _whatsapp_queue:
-            return None
-        return _whatsapp_queue.popleft()
+    try:
+        raw = await redis_client.lpop(WHATSAPP_META_QUEUE_KEY)
+        if raw:
+            return json.loads(raw)
+    except Exception as e:
+        logger.error("[WhatsApp Meta Queue] Erreur pop Redis: %s", e)
+    return None
 
 
 async def _get_whatsapp_queue_size() -> int:
-    async with _whatsapp_queue_lock:
-        return len(_whatsapp_queue)
+    try:
+        return await redis_client.llen(WHATSAPP_META_QUEUE_KEY)
+    except Exception:
+        return 0
 
 
 def _whapi_queue_auth_ok(token_from_header: str) -> bool:
@@ -735,6 +728,8 @@ def _schedule_whapi_processing(
             gate,
         )
         if item.kind == "text":
+            if _MESSAGES_TOTAL is not None:
+                _MESSAGES_TOTAL.labels(channel="whapi").inc()
             if background_tasks is not None:
                 background_tasks.add_task(
                     process_whatsapp_message,
@@ -755,6 +750,8 @@ def _schedule_whapi_processing(
                     )
                 )
         else:
+            if _MESSAGES_TOTAL is not None:
+                _MESSAGES_TOTAL.labels(channel="whapi").inc()
             if background_tasks is not None:
                 background_tasks.add_task(
                     process_whatsapp_image,
@@ -821,6 +818,8 @@ async def _dispatch_whatsapp_payload(payload: dict, background_tasks: Background
         if msg_type == "text":
             text = msg["text"]["body"]
             logger.info("[WhatsApp] Requete recue (%s): %.100s", phone_number, text)
+            if _MESSAGES_TOTAL is not None:
+                _MESSAGES_TOTAL.labels(channel="whatsapp").inc()
             if background_tasks is not None:
                 background_tasks.add_task(
                     process_whatsapp_message,
@@ -840,6 +839,8 @@ async def _dispatch_whatsapp_payload(payload: dict, background_tasks: Background
             caption = image.get("caption")
             logger.info("Image WhatsApp reçue de %s (media_id=%s)", phone_number, media_id)
             if media_id:
+                if _MESSAGES_TOTAL is not None:
+                    _MESSAGES_TOTAL.labels(channel="whatsapp").inc()
                 if background_tasks is not None:
                     background_tasks.add_task(
                         process_whatsapp_image,
@@ -1000,6 +1001,15 @@ async def process_whatsapp_message(
         )
         return
 
+    if await is_rate_limited(phone_number, platform=f"whatsapp:{transport}"):
+        logger.info("[WhatsApp] Rate limit atteint — message ignoré transport=%s chat=%s", transport, phone_number[:40])
+        return
+
+    query = sanitize_input(query, channel="whatsapp")
+    if not query:
+        logger.info("[WhatsApp] Message vide après sanitisation transport=%s chat=%s", transport, phone_number[:40])
+        return
+
     query_embedding = embedding_service.generate(query)
     local_context = None
     global_context = None
@@ -1087,7 +1097,8 @@ async def process_whatsapp_message(
                 old_query=old_query,
                 old_verdict=old_verdict,
                 group_count=group_count,
-                channel="whatsapp"
+                channel="whatsapp",
+                query_embedding=query_embedding,
             )
             verdict = rag_res.get("verdict", "")
             sources = rag_res.get("sources", [])
@@ -1106,7 +1117,8 @@ async def process_whatsapp_message(
                 query=query,
                 old_query=old_query,
                 old_verdict=old_verdict,
-                channel="whatsapp"
+                channel="whatsapp",
+                query_embedding=query_embedding,
             )
             verdict = rag_res.get("verdict", "")
             sources = rag_res.get("sources", [])
@@ -1118,16 +1130,22 @@ async def process_whatsapp_message(
                 logger.info("[Whapi] Sujet proche déjà vu — RAG standard + indicateur 💡")
             else:
                 logger.info("[Whapi] RAG standard (nouvelle question)")
-            rag_res = await rag_service.generate_full_answer(query, channel="whatsapp")
+            rag_res = await rag_service.generate_full_answer(
+                query, channel="whatsapp", query_embedding=query_embedding
+            )
             verdict = rag_res.get("verdict", "")
             sources = rag_res.get("sources", [])
             prefix = repeat_note_prefix() if should_show_repeat_indicator(local_context) else ""
             body = f"{prefix}{(verdict or '').strip()}".strip()
         
-        # Envoi WhatsApp
+        # Envoi WhatsApp — ajout des sources si le LLM ne les a pas incluses
         if sources and "SOURCES" not in body.upper():
-            # ... (formatage sources existant) ...
-            pass # (déjà géré dans les prompt viraux/raffinés normalement)
+            lines = []
+            for i, source in enumerate(sources, 1):
+                title = source.get("title") or "Source locale"
+                url = source.get("url") or "(lien indisponible)"
+                lines.append(f"[{i}] {title} - {url}")
+            body = f"{body}\n\n🔗 SOURCES LOCALES :\n" + "\n".join(lines)
 
         logger.info(
             "[Whapi] Réponse prête (%s car.) — envoi WhatsApp",
@@ -1205,11 +1223,15 @@ async def process_whatsapp_image(
         phone_number, wa_message_id, platform=platform_key
     ):
         logger.info(
-            "[Dedup] WhatsApp ignoré (déjà traité) transport=%s chat=%s id=%s",
+            "[Dedup] WhatsApp image ignorée (déjà traitée) transport=%s chat=%s id=%s",
             transport,
             phone_number[:40],
             (wa_message_id or "")[:40],
         )
+        return
+
+    if await is_rate_limited(phone_number, platform=f"whatsapp:{transport}"):
+        logger.info("[WhatsApp] Rate limit image — ignorée transport=%s chat=%s", transport, phone_number[:40])
         return
 
     base_headers: dict[str, str] = {}
@@ -1335,7 +1357,8 @@ async def process_whatsapp_image(
 
             try:
                 rag_res = await rag_service.generate_full_answer(
-                    combined_query, channel="whatsapp"
+                    combined_query, channel="whatsapp",
+                    query_embedding=query_embedding,
                 )
                 verdict = rag_res.get("verdict", "")
                 sources = rag_res.get("sources", [])
@@ -1436,6 +1459,8 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
             logger.info("[Telegram] Webhook ignoré (dedup) chat=%s id=%s", chat_id, tg_msg_id)
             return {"status": "ok", "dedup": True}
         tg_msg_id_str = str(tg_msg_id) if tg_msg_id is not None else None
+        if _MESSAGES_TOTAL is not None:
+            _MESSAGES_TOTAL.labels(channel="telegram").inc()
         background_tasks.add_task(
             process_telegram_message,
             str(chat_id),
@@ -1476,6 +1501,8 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
             logger.info("[Telegram] Webhook image ignoré (dedup) chat=%s id=%s", chat_id, tg_msg_id)
             return {"status": "ok", "dedup": True}
         tg_msg_id_str = str(tg_msg_id) if tg_msg_id is not None else None
+        if _MESSAGES_TOTAL is not None:
+            _MESSAGES_TOTAL.labels(channel="telegram").inc()
         background_tasks.add_task(
             process_telegram_message,
             str(chat_id),
@@ -1483,7 +1510,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
             tg_msg_id_str,
             skip_dedup=True,
         )
-        
+
     return {"status": "ok"}
 
 
@@ -1590,12 +1617,23 @@ async def whapi_reply_relay(request: Request):
 async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Webhook POST pour WhatsApp Cloud API : Reçoit les messages.
+    Vérifie la signature HMAC-SHA256 de Meta (X-Hub-Signature-256) si WHATSAPP_APP_SECRET est défini.
     """
     peer = request.client.host if request.client else "?"
     logger.info("[WhatsApp] ← POST /webhooks/whatsapp (client=%s)", peer)
 
+    # Lire le body brut pour la vérification HMAC avant de parser le JSON
     try:
-        payload = await request.json()
+        raw_body = await request.body()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Corps de requête illisible") from exc
+
+    signature = request.headers.get("X-Hub-Signature-256", "")
+    if not _verify_meta_signature(raw_body, signature):
+        raise HTTPException(status_code=403, detail="Signature webhook invalide")
+
+    try:
+        payload = json.loads(raw_body)
     except Exception as exc:  # noqa: BLE001
         logger.exception("[WhatsApp] Corps JSON invalide ou vide : %s", exc)
         raise HTTPException(status_code=400, detail="JSON invalide") from exc
@@ -1678,9 +1716,11 @@ async def whatsapp_verify(request: Request):
     hub_challenge = request.query_params.get("hub.challenge")
     hub_verify_token = request.query_params.get("hub.verify_token")
     
-    # Token configuré dans le dashboard Meta
-    expected_token = os.getenv("WHATSAPP_VERIFY_TOKEN", "rdc_news_token")
-    
+    expected_token = (os.getenv("WHATSAPP_VERIFY_TOKEN") or "").strip()
+    if not expected_token:
+        logger.error("[WhatsApp] WHATSAPP_VERIFY_TOKEN absent — vérification refusée.")
+        raise HTTPException(status_code=403, detail="Token de vérification non configuré")
+
     if hub_mode == "subscribe" and hub_verify_token == expected_token:
         logger.info("Webhook WhatsApp vérifié avec succès!")
         return Response(content=hub_challenge, media_type="text/plain")

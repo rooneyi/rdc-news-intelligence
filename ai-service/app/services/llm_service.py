@@ -4,8 +4,24 @@ import logging
 import json
 from typing import List, AsyncGenerator
 from app.schemas.article import ArticleOut
+from app.services.circuit_breaker import ollama_breaker, CircuitOpen
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_ollama_keep_alive(raw: str | None = None) -> int | str:
+    """
+    Ollama accepte keep_alive comme :
+    - entier (secondes, -1 = garder en mémoire, 0 = décharger)
+    - chaîne durée (« 5m », « 24h »)
+    La chaîne « -1 » provoque une 400 (parseur durée sans unité).
+    """
+    val = (raw if raw is not None else "-1").strip()
+    if not val:
+        return -1
+    if val.lstrip("-").isdigit():
+        return int(val)
+    return val
 
 
 class LLMService:
@@ -14,18 +30,49 @@ class LLMService:
     def __init__(self, model: str | None = None, host: str | None = None, timeout: int | None = None):
         self.model = model or os.getenv("OLLAMA_MODEL", "mistral")
         self.host = host or os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
-        # On met un timeout très large (5 min) pour éviter les erreurs de chargement du modèle
-        self.timeout = timeout or 300
-        # Paramètres mémoire/performance (garde le même modèle, réduit la RAM utilisée).
-        # Contexte suffisant pour articles + prompt + réponse (sinon la sortie est tronquée).
+        self.timeout = timeout or int(os.getenv("OLLAMA_TIMEOUT", "300"))
+        # num_ctx=2048 suffit pour le prompt (articles ~600 tokens + question + réponse).
+        # 4096 double le temps de génération sur CPU sans gain de qualité pour ce cas d’usage.
         self.num_ctx = int(os.getenv("OLLAMA_NUM_CTX", "2048"))
-        self.num_batch = int(os.getenv("OLLAMA_NUM_BATCH", "32"))
-        # Plafond de tokens générés : 120 pour messagerie coupait l’explication au milieu d’une phrase.
-        self.msg_num_predict = int(os.getenv("OLLAMA_NUM_PREDICT_MSG", "512"))
-        self.web_num_predict = int(os.getenv("OLLAMA_NUM_PREDICT_WEB", "512"))
-        # Modèles de secours (optionnels) en cas d'échec sur le modèle principal.
+        self.num_batch = int(os.getenv("OLLAMA_NUM_BATCH", "128"))
+        self.num_thread = int(os.getenv("OLLAMA_NUM_THREAD", "4"))
+        self.msg_num_predict = int(os.getenv("OLLAMA_NUM_PREDICT_MSG", "256"))
+        self.web_num_predict = int(os.getenv("OLLAMA_NUM_PREDICT_WEB", "300"))
+        # keep_alive=-1 (entier) : modèle reste chargé — évite le cold start de 3-5 min.
+        self.keep_alive = normalize_ollama_keep_alive(os.getenv("OLLAMA_KEEP_ALIVE", "-1"))
         raw_fallbacks = os.getenv("OLLAMA_FALLBACK_MODELS", "mistral:latest,mistral")
         self.fallback_models = [m.strip() for m in raw_fallbacks.split(",") if m.strip()]
+
+    def _ollama_options(self, *, temperature: float = 0.1, extra: dict | None = None) -> dict:
+        opts = {
+            "temperature": temperature,
+            "num_ctx": self.num_ctx,
+            "num_batch": self.num_batch,
+            "num_thread": self.num_thread,
+        }
+        if extra:
+            opts.update(extra)
+        return opts
+
+    def _ollama_body(
+        self,
+        model: str,
+        prompt: str,
+        *,
+        stream: bool = True,
+        num_predict: int | None = None,
+        temperature: float = 0.1,
+    ) -> dict:
+        body: dict = {
+            "model": model,
+            "prompt": prompt,
+            "stream": stream,
+            "keep_alive": self.keep_alive,
+            "options": self._ollama_options(temperature=temperature),
+        }
+        if num_predict is not None:
+            body["num_predict"] = num_predict
+        return body
 
     def _model_candidates(self) -> list[str]:
         candidates: list[str] = []
@@ -77,23 +124,12 @@ Articles de référence :
 
         for idx, model_name in enumerate(attempts):
             try:
-                # Utilisation d'un client avec timeout désactivé pour la lecture du stream
+                await ollama_breaker.check()
                 async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout, read=None)) as client:
                     async with client.stream(
                         "POST",
                         url,
-                        json={
-                            "model": model_name,
-                            "prompt": prompt,
-                            "stream": True,
-                            "num_predict": max_tokens,
-                            "options": {
-                                "temperature": 0.1,
-                                "num_ctx": self.num_ctx,
-                                "num_batch": self.num_batch,
-                                "num_thread": 4, # Optimisé pour 4 vCPUs
-                            },
-                        },
+                        json=self._ollama_body(model_name, prompt, num_predict=max_tokens),
                     ) as response:
                         if response.status_code != 200:
                             error_body = await response.aread()
@@ -102,6 +138,7 @@ Articles de référence :
                                 f"{error_body.decode(errors='ignore')[:300]}"
                             )
                             logger.error("[LLMService] %s", last_error)
+                            await ollama_breaker.record_failure(RuntimeError(last_error))
                             continue
 
                         logger.info("[LLMService] Génération Ollama avec modèle '%s'", model_name)
@@ -114,13 +151,17 @@ Articles de référence :
                                 if chunk:
                                     yield chunk
                                 if data.get("done"):
+                                    await ollama_breaker.record_success()
                                     return
                             except json.JSONDecodeError:
                                 continue
+            except CircuitOpen as e:
+                last_error = str(e)
+                break
             except Exception as e:
                 last_error = f"Ollama connection error sur '{model_name}': {e}"
                 logger.error("[LLMService] %s", last_error)
-                # Petit backoff entre les tentatives
+                await ollama_breaker.record_failure(e)
                 if idx < len(attempts) - 1:
                     continue
 
@@ -203,37 +244,66 @@ Format strict :
 [/INST]"""
 
     async def summarize_viral_stream(
-        self, 
-        query: str, 
-        old_query: str, 
-        old_verdict: str, 
-        articles: List[ArticleOut], 
+        self,
+        query: str,
+        old_query: str,
+        old_verdict: str,
+        articles: List[ArticleOut],
         group_count: int,
         channel: str = "web"
     ) -> AsyncGenerator[str, None]:
         """Génère une réponse de synthèse pour un sujet viral transverse."""
         prompt = self._build_viral_refined_prompt(query, old_query, old_verdict, articles, group_count, channel)
         url = f"{self.host}/api/generate"
-        
-        async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout, read=None)) as client:
-            async with client.stream(
-                "POST", url,
-                json={
-                    "model": self.model,
-                    "prompt": prompt,
-                    "stream": True,
-                    "options": {"temperature": 0.1, "num_ctx": self.num_ctx},
-                },
-            ) as response:
-                if response.status_code == 200:
-                    async for line in response.aiter_lines():
-                        if not line: continue
-                        try:
-                            data = json.loads(line)
-                            chunk = data.get("response", "")
-                            if chunk: yield chunk
-                            if data.get("done"): return
-                        except: continue
+        max_tokens = (
+            self.msg_num_predict if channel in {"whatsapp", "telegram", "web"} else self.web_num_predict
+        )
+        attempts = self._model_candidates()
+        last_error = "Erreur inconnue"
+
+        for idx, model_name in enumerate(attempts):
+            try:
+                await ollama_breaker.check()
+                async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout, read=None)) as client:
+                    async with client.stream(
+                        "POST", url,
+                        json=self._ollama_body(model_name, prompt, num_predict=max_tokens),
+                    ) as response:
+                        if response.status_code != 200:
+                            error_body = await response.aread()
+                            last_error = (
+                                f"Ollama {response.status_code} sur modèle '{model_name}': "
+                                f"{error_body.decode(errors='ignore')[:300]}"
+                            )
+                            logger.error("[LLMService] %s", last_error)
+                            await ollama_breaker.record_failure(RuntimeError(last_error))
+                            continue
+
+                        logger.info("[LLMService] Synthèse virale Ollama avec modèle '%s'", model_name)
+                        async for line in response.aiter_lines():
+                            if not line:
+                                continue
+                            try:
+                                data = json.loads(line)
+                                chunk = data.get("response", "")
+                                if chunk:
+                                    yield chunk
+                                if data.get("done"):
+                                    await ollama_breaker.record_success()
+                                    return
+                            except Exception:
+                                continue
+            except CircuitOpen as e:
+                last_error = str(e)
+                break
+            except Exception as e:
+                last_error = f"Ollama connection error sur '{model_name}': {e}"
+                logger.error("[LLMService] %s", last_error)
+                await ollama_breaker.record_failure(e)
+                if idx < len(attempts) - 1:
+                    continue
+
+        yield f"❌ Erreur Ollama (viral): {last_error}"
 
     async def summarize_refined_stream(
         self, 
@@ -261,37 +331,41 @@ Format strict :
 
         for idx, model_name in enumerate(attempts):
             try:
+                await ollama_breaker.check()
                 async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout, read=None)) as client:
                     async with client.stream(
                         "POST",
                         url,
-                        json={
-                            "model": model_name,
-                            "prompt": prompt,
-                            "stream": True,
-                            "num_predict": max_tokens,
-                            "options": {
-                                "temperature": 0.2, # Un peu plus de créativité pour l'amélioration
-                                "num_ctx": self.num_ctx,
-                                "num_batch": self.num_batch,
-                                "num_thread": 4,
-                            },
-                        },
+                        json=self._ollama_body(model_name, prompt, num_predict=max_tokens, temperature=0.2),
                     ) as response:
                         if response.status_code != 200:
+                            error_body = await response.aread()
+                            last_error = f"Ollama {response.status_code} sur '{model_name}'"
+                            await ollama_breaker.record_failure(RuntimeError(last_error))
                             continue
 
                         async for line in response.aiter_lines():
-                            if not line: continue
+                            if not line:
+                                continue
                             try:
                                 data = json.loads(line)
                                 chunk = data.get("response", "")
-                                if chunk: yield chunk
-                                if data.get("done"): return
-                            except: continue
+                                if chunk:
+                                    yield chunk
+                                if data.get("done"):
+                                    await ollama_breaker.record_success()
+                                    return
+                            except Exception:
+                                continue
+            except CircuitOpen as e:
+                last_error = str(e)
+                break
             except Exception as e:
                 last_error = str(e)
-                if idx < len(attempts) - 1: continue
+                logger.error("[LLMService] Raffinement erreur sur '%s': %s", model_name, e)
+                await ollama_breaker.record_failure(e)
+                if idx < len(attempts) - 1:
+                    continue
 
         yield f"❌ Erreur Ollama: {last_error}"
 
@@ -337,17 +411,15 @@ Format strict :
         url = f"{self.host}/api/generate"
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    url,
-                    json={
-                        "model": self.model,
-                        "prompt": prompt,
-                        "stream": False,
-                        "options": {
-                            "temperature": 0.0,
-                            "num_thread": 4,  # Optimisé pour 4 vCPUs
-                        },
-                    },
+                response = await ollama_breaker.call(
+                    client.post(
+                        url,
+                        json=self._ollama_body(
+                            self.model, prompt, stream=False,
+                            num_predict=300,
+                            temperature=0.0,
+                        ),
+                    )
                 )
                 if response.status_code == 200:
                     result = response.json()
@@ -382,8 +454,10 @@ Format strict :
                             f"[LLMService] Échec du parsing JSON re-ranking: {e}. "
                             f"Texte: {text_response[:100]}"
                         )
+        except CircuitOpen:
+            logger.warning("[LLMService] Re-ranking ignoré — circuit Ollama ouvert")
         except Exception as e:
             logger.error(f"[LLMService] Erreur lors du re-ranking: {e}")
-        
+
         return articles
 

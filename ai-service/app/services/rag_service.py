@@ -4,6 +4,7 @@ from typing import AsyncGenerator
 from app.services.embedding_service import EmbeddingService
 from app.services.retrieval_service import RetrievalService
 from app.services.llm_service import LLMService
+from app.services.response_cache import get_cached, set_cached
 
 logger = logging.getLogger(__name__)
 
@@ -74,16 +75,18 @@ class RAGService:
         group_count: int,
         top_k: int = 5,
         channel: str = "web",
+        query_embedding: list | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Génère une synthèse d'intelligence pour un sujet viral transverse."""
         try:
             effective_top_k = min(top_k, 5)
-            query_embedding = self.embedding_service.generate(query)
+            if query_embedding is None:
+                query_embedding = self.embedding_service.generate(query)
             articles = self.retrieval_service.search(query_embedding, limit=effective_top_k * 2)
-            
+
             if self.enable_rerank and len(articles) > 1:
                 articles = await self.llm_service.rerank(query, articles)
-            
+
             articles = self._filter_relevant_articles(articles, channel)
             articles = articles[:effective_top_k]
 
@@ -91,9 +94,12 @@ class RAGService:
             if sources:
                 yield {"type": "sources", "sources": sources}
 
+            full_text_parts: list[str] = []
             async for chunk in self.llm_service.summarize_viral_stream(query, old_query, old_verdict, articles, group_count, channel=channel):
+                full_text_parts.append(chunk)
                 yield {"type": "summary_chunk", "text": chunk}
 
+            await set_cached(query, channel, "".join(full_text_parts), sources)
             yield {"type": "done"}
         except Exception as e:
             logger.error(f"Erreur generate_viral_answer_stream: {e}")
@@ -106,12 +112,14 @@ class RAGService:
         old_verdict: str,
         top_k: int = 5,
         channel: str = "web",
+        query_embedding: list | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Génère une réponse améliorée en streaming quand une question similaire existe."""
         try:
             effective_top_k = min(top_k, 3) if channel in {"telegram", "whatsapp"} else top_k
-            
-            query_embedding = self.embedding_service.generate(query)
+
+            if query_embedding is None:
+                query_embedding = self.embedding_service.generate(query)
             articles = self.retrieval_service.search(query_embedding, limit=effective_top_k * 2)
             
             if self.enable_rerank and len(articles) > 1:
@@ -138,28 +146,29 @@ class RAGService:
         old_query: str,
         old_verdict: str,
         top_k: int = 5,
-        channel: str = "web"
+        channel: str = "web",
+        query_embedding: list | None = None,
     ) -> dict:
         """Génère une réponse améliorée complète pour une question similaire."""
         try:
             effective_top_k = min(top_k, 3) if channel in {"telegram", "whatsapp"} else top_k
-            
-            query_embedding = self.embedding_service.generate(query)
+
+            if query_embedding is None:
+                query_embedding = self.embedding_service.generate(query)
             articles = self.retrieval_service.search(query_embedding, limit=effective_top_k * 2)
-            
+
             if self.enable_rerank and len(articles) > 1:
                 articles = await self.llm_service.rerank(query, articles)
-            
+
             articles = self._filter_relevant_articles(articles, channel)
             articles = articles[:effective_top_k]
-            
+
             sources = [{"id": a.id, "title": a.title, "url": a.link} for a in articles]
-            
+
             verdict = await self.llm_service.summarize_refined_full(query, old_query, old_verdict, articles, channel=channel)
-            return {
-                "verdict": verdict,
-                "sources": sources
-            }
+            result = {"verdict": verdict, "sources": sources}
+            await set_cached(query, channel, verdict, sources)
+            return result
         except Exception as e:
             logger.error(f"Erreur generate_refined_full_answer: {e}")
             return {
@@ -174,12 +183,14 @@ class RAGService:
         old_verdict: str,
         group_count: int,
         top_k: int = 5,
-        channel: str = "web"
+        channel: str = "web",
+        query_embedding: list | None = None,
     ) -> dict:
         """Génère une synthèse d'intelligence complète pour un sujet viral transverse."""
         try:
             effective_top_k = min(top_k, 5)
-            query_embedding = self.embedding_service.generate(query)
+            if query_embedding is None:
+                query_embedding = self.embedding_service.generate(query)
             articles = self.retrieval_service.search(query_embedding, limit=effective_top_k * 2)
             
             if self.enable_rerank and len(articles) > 1:
@@ -190,15 +201,13 @@ class RAGService:
             
             sources = [{"id": a.id, "title": a.title, "url": a.link} for a in articles]
             
-            # Utilisation de la nouvelle synthèse virale (non-streaming)
             verdict = ""
             async for chunk in self.llm_service.summarize_viral_stream(query, old_query, old_verdict, articles, group_count, channel=channel):
                 verdict += chunk
-                
-            return {
-                "verdict": verdict,
-                "sources": sources
-            }
+
+            result = {"verdict": verdict, "sources": sources}
+            await set_cached(query, channel, verdict, sources)
+            return result
         except Exception as e:
             logger.error(f"Erreur generate_viral_full_answer: {e}")
             return {
@@ -211,13 +220,13 @@ class RAGService:
         query: str,
         top_k: int = 5,
         channel: str = "web",
+        query_embedding: list | None = None,
     ) -> AsyncGenerator[dict, None]:
         """
         Génère une réponse RAG en streaming réel.
-        C'est cette méthode qui permet à Mistral de répondre sans timeout.
+        `query_embedding` peut être passé pour éviter de le recalculer si déjà disponible.
         """
         try:
-            # Même logique que generate_full_answer : moins d’articles pour messagerie ; web aligné (top_k réduit).
             effective_top_k = top_k
             if channel in {"telegram", "whatsapp"}:
                 effective_top_k = min(top_k, 3)
@@ -227,10 +236,19 @@ class RAGService:
                     int(os.getenv("RAG_WEB_TOP_K", os.getenv("WHATSAPP_TOP_K", "3"))),
                 )
 
-            # 1. Recherche des articles (Très rapide via ChromaDB)
-            # On récupère plus de candidats pour le re-ranking (ex: 3x top_k)
-            search_limit = effective_top_k * 3
-            query_embedding = self.embedding_service.generate(query)
+            # 1. Vérifier le cache avant tout calcul coûteux
+            cached = await get_cached(query, channel)
+            if cached:
+                if cached.get("sources"):
+                    yield {"type": "sources", "sources": cached["sources"]}
+                yield {"type": "summary_chunk", "text": cached["verdict"]}
+                yield {"type": "done"}
+                return
+
+            # 2. Recherche vectorielle (embedding pré-calculé si fourni)
+            search_limit = effective_top_k * 2 if not self.enable_rerank else effective_top_k * 3
+            if query_embedding is None:
+                query_embedding = self.embedding_service.generate(query)
             articles = self.retrieval_service.search(query_embedding, limit=search_limit)
             
             # 2. Re-ranking sémantique via l'LLM (désactivable : RAG_ENABLE_RERANK=false)
@@ -263,9 +281,14 @@ class RAGService:
             logger.info(f"[RAGService] Envoi des sources ({len(sources)}): {sources}")
             yield {"type": "sources", "sources": sources}
 
-            # 5. Streamer Mistral mot par mot
+            # 5. Streamer Mistral mot par mot en collectant pour le cache
+            full_text_parts: list[str] = []
             async for chunk in self.llm_service.summarize_stream(query, articles, channel=channel):
+                full_text_parts.append(chunk)
                 yield {"type": "summary_chunk", "text": chunk}
+
+            # 6. Sauvegarder en cache pour les prochaines requêtes identiques
+            await set_cached(query, channel, "".join(full_text_parts), sources)
 
             logger.info("[RAGService] Fin du flux RAG (done)")
             yield {"type": "done"}
@@ -274,10 +297,21 @@ class RAGService:
             logger.error(f"Erreur critique dans le flux RAG: {e}")
             yield {"type": "error", "message": _format_rag_error(e)}
 
-    async def generate_full_answer(self, query: str, top_k: int = 5, channel: str = "web") -> dict:
-        """Génère une réponse RAG complète et retourne le texte + les sources."""
+    async def generate_full_answer(
+        self,
+        query: str,
+        top_k: int = 5,
+        channel: str = "web",
+        query_embedding: list | None = None,
+    ) -> dict:
+        """Génère une réponse RAG complète et retourne le texte + les sources.
+        `query_embedding` peut être passé pour éviter de le recalculer si déjà disponible."""
         try:
-            # Messagerie + web : même plafond d’articles (voir RAG_WEB_TOP_K).
+            # Vérifier le cache d’abord
+            cached = await get_cached(query, channel)
+            if cached:
+                return cached
+
             if channel in ["telegram", "whatsapp"]:
                 top_k = min(top_k, 3)
             elif channel == "web":
@@ -286,9 +320,10 @@ class RAGService:
                     int(os.getenv("RAG_WEB_TOP_K", os.getenv("WHATSAPP_TOP_K", "3"))),
                 )
 
-            query_embedding = self.embedding_service.generate(query)
-            # On récupère plus de candidats pour le re-ranking
-            articles = self.retrieval_service.search(query_embedding, limit=top_k * 3)
+            if query_embedding is None:
+                query_embedding = self.embedding_service.generate(query)
+            search_limit = top_k * 2 if not self.enable_rerank else top_k * 3
+            articles = self.retrieval_service.search(query_embedding, limit=search_limit)
             
             if self.enable_rerank and len(articles) > 1:
                 logger.info("[RAGService] Re-ranking avant génération (%s candidats)", len(articles))
@@ -308,10 +343,9 @@ class RAGService:
 
             logger.info("[RAGService] Appel Mistral/Ollama (generate_full_answer, %s sources)", len(articles))
             verdict = await self.llm_service.summarize_full(query, articles, channel=channel)
-            return {
-                "verdict": verdict,
-                "sources": sources
-            }
+            result = {"verdict": verdict, "sources": sources}
+            await set_cached(query, channel, verdict, sources)
+            return result
 
         except Exception as e:
             logger.error(f"Erreur critique dans le flux complet RAG: {e}")

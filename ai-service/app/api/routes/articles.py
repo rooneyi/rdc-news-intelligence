@@ -498,6 +498,73 @@ def _article_row_to_dict(row) -> dict:
     }
 
 
+@router.get("/admin/monitoring", summary="Monitoring temps réel : métriques, circuit breaker, cache", tags=["Admin"])
+def admin_monitoring():
+    """
+    Retourne les métriques opérationnelles en temps réel :
+    - État du circuit breaker Ollama
+    - Compteurs de messages par canal (depuis le démarrage du service)
+    - Statistiques du cache RAG (hits / misses / taux)
+    """
+    from app.services.circuit_breaker import ollama_breaker
+
+    cb_state = ollama_breaker.state
+    cb_failures = ollama_breaker._failures
+
+    channels = ["telegram", "whatsapp", "whapi"]
+    messages_by_channel: dict[str, int] = {ch: 0 for ch in channels}
+    hits_by_channel: dict[str, int] = {ch: 0 for ch in channels}
+    misses_by_channel: dict[str, int] = {ch: 0 for ch in channels}
+
+    def _read_counter(counter_obj, label_key: str) -> dict[str, int]:
+        result: dict[str, int] = {}
+        try:
+            for family in counter_obj.collect():
+                for sample in family.samples:
+                    if sample.name.endswith("_total"):
+                        lv = sample.labels.get(label_key, "unknown")
+                        result[lv] = int(sample.value)
+        except Exception:
+            pass
+        return result
+
+    try:
+        from app.services.metrics import CACHE_HITS, CACHE_MISSES, MESSAGES_TOTAL
+        raw_messages = _read_counter(MESSAGES_TOTAL, "channel")
+        raw_hits = _read_counter(CACHE_HITS, "channel")
+        raw_misses = _read_counter(CACHE_MISSES, "channel")
+        for ch in channels:
+            messages_by_channel[ch] = raw_messages.get(ch, 0)
+            hits_by_channel[ch] = raw_hits.get(ch, 0)
+            misses_by_channel[ch] = raw_misses.get(ch, 0)
+    except ImportError:
+        pass
+
+    total_hits = sum(hits_by_channel.values())
+    total_misses = sum(misses_by_channel.values())
+    total_cache = total_hits + total_misses
+    hit_rate = round(total_hits / total_cache * 100, 1) if total_cache > 0 else 0.0
+
+    return {
+        "circuit_breaker": {
+            "name": ollama_breaker.name,
+            "state": cb_state,
+            "failures": cb_failures,
+            "threshold": ollama_breaker.failure_threshold,
+        },
+        "messages": {
+            "total": sum(messages_by_channel.values()),
+            "by_channel": messages_by_channel,
+        },
+        "cache": {
+            "hits": total_hits,
+            "misses": total_misses,
+            "total": total_cache,
+            "hit_rate_pct": hit_rate,
+        },
+    }
+
+
 @router.get("/admin/corpus", summary="Corpus: langues, catégories, échantillons", tags=["Admin"])
 def admin_corpus():
     """

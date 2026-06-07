@@ -9,6 +9,7 @@ import {
   Globe,
   Layers,
   LogOut,
+  MessageSquare,
   Play,
   RefreshCw,
   Server,
@@ -62,6 +63,25 @@ type MaintenanceJob = {
   error: string | null;
 };
 
+type MonitoringData = {
+  circuit_breaker: {
+    name: string;
+    state: "CLOSED" | "HALF_OPEN" | "OPEN";
+    failures: number;
+    threshold: number;
+  };
+  messages: {
+    total: number;
+    by_channel: { telegram: number; whatsapp: number; whapi: number };
+  };
+  cache: {
+    hits: number;
+    misses: number;
+    total: number;
+    hit_rate_pct: number;
+  };
+};
+
 export default function AdminPage() {
   const { appName, adminEmail } = useAdminBranding();
   const router = useRouter();
@@ -81,6 +101,9 @@ export default function AdminPage() {
   const [reembedFetchHtml, setReembedFetchHtml] = useState(false);
   const [maintenanceStarting, setMaintenanceStarting] = useState(false);
   const [maintenanceError, setMaintenanceError] = useState<string | null>(null);
+  const [monitoring, setMonitoring] = useState<MonitoringData | null>(null);
+  const [monitoringLoading, setMonitoringLoading] = useState(true);
+  const [monitoringRefreshing, setMonitoringRefreshing] = useState(false);
 
   const adminJobBusy = Boolean(crawlerJob?.running || maintenanceJob?.running);
 
@@ -264,6 +287,27 @@ export default function AdminPage() {
       void loadOverview(true);
     }
   }, [maintenanceJob?.running, maintenanceJob?.status, loadOverview]);
+
+  const loadMonitoring = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setMonitoringRefreshing(true);
+    else setMonitoringLoading(true);
+    try {
+      const res = await fetch("/api/fastapi/admin/monitoring", { cache: "no-store" });
+      if (res.status === 401) { router.push("/admin/login"); return; }
+      if (!res.ok) return;
+      const payload = await res.json() as MonitoringData;
+      setMonitoring(payload);
+    } catch { /* ignore */ } finally {
+      setMonitoringLoading(false);
+      setMonitoringRefreshing(false);
+    }
+  }, [router]);
+
+  useEffect(() => {
+    void loadMonitoring();
+    const id = window.setInterval(() => { void loadMonitoring(true); }, 30_000);
+    return () => window.clearInterval(id);
+  }, [loadMonitoring]);
 
   const cards = useMemo(
     () => [
@@ -682,6 +726,138 @@ export default function AdminPage() {
             )}
           </div>
         </div>
+      </section>
+
+      {/* ── Monitoring temps réel ────────────────────────────── */}
+      <section className="rdc-card mt-4 rounded-2xl p-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Activity size={15} className="text-slate-400" />
+            <p className="text-sm font-semibold text-slate-200">Monitoring temps réel</p>
+            <span className="rounded-md border border-slate-600/40 px-1.5 py-0.5 text-[10px] text-slate-500">
+              Métriques depuis le dernier démarrage
+            </span>
+          </div>
+          <button
+            onClick={() => void loadMonitoring(true)}
+            disabled={monitoringRefreshing}
+            className="rdc-btn-primary inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed"
+          >
+            <RefreshCw size={12} className={monitoringRefreshing ? "animate-spin" : ""} />
+            {monitoringRefreshing ? "…" : "Rafraîchir"}
+          </button>
+        </div>
+
+        {monitoringLoading ? (
+          <div className="grid gap-3 md:grid-cols-3">
+            {[1, 2, 3].map((n) => (
+              <div key={n} className="h-24 animate-pulse rounded-xl bg-slate-700/40" />
+            ))}
+          </div>
+        ) : monitoring ? (
+          <div className="grid gap-3 md:grid-cols-3">
+
+            {/* Circuit breaker */}
+            <div className="rounded-xl border border-slate-600/30 bg-slate-800/40 p-4">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Circuit breaker Ollama
+              </p>
+              {(() => {
+                const s = monitoring.circuit_breaker.state;
+                const palette =
+                  s === "CLOSED"
+                    ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-200"
+                    : s === "HALF_OPEN"
+                    ? "border-amber-400/30 bg-amber-500/10 text-amber-200"
+                    : "border-red-400/30 bg-red-500/10 text-red-200";
+                const dot =
+                  s === "CLOSED" ? "bg-emerald-400" : s === "HALF_OPEN" ? "bg-amber-400" : "bg-red-400";
+                return (
+                  <div className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-semibold ${palette}`}>
+                    <span className={`h-2 w-2 rounded-full ${dot}`} />
+                    {s}
+                  </div>
+                );
+              })()}
+              <p className="mt-2 text-xs text-slate-500">
+                {monitoring.circuit_breaker.failures} échec
+                {monitoring.circuit_breaker.failures !== 1 ? "s" : ""} /{" "}
+                seuil&nbsp;{monitoring.circuit_breaker.threshold}
+              </p>
+            </div>
+
+            {/* Messages par canal */}
+            <div className="rounded-xl border border-slate-600/30 bg-slate-800/40 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Messages reçus
+                </p>
+                <span className="rdc-brand-text text-lg font-semibold">
+                  {monitoring.messages.total}
+                </span>
+              </div>
+              <ul className="space-y-1.5">
+                {(
+                  [
+                    { key: "telegram", label: "Telegram", icon: <MessageSquare size={11} /> },
+                    { key: "whatsapp", label: "WhatsApp", icon: <MessageSquare size={11} /> },
+                    { key: "whapi", label: "Whapi", icon: <MessageSquare size={11} /> },
+                  ] as const
+                ).map(({ key, label, icon }) => {
+                  const count = monitoring.messages.by_channel[key];
+                  const total = monitoring.messages.total || 1;
+                  const w = Math.max(4, (count / total) * 100);
+                  return (
+                    <li key={key}>
+                      <div className="mb-1 flex items-center justify-between text-xs text-slate-400">
+                        <span className="flex items-center gap-1">{icon} {label}</span>
+                        <span className="text-slate-300">{count}</span>
+                      </div>
+                      <div className="h-1.5 rounded bg-slate-700/60">
+                        <div className="rdc-accent-bar h-1.5 rounded transition-all duration-500" style={{ width: `${w}%` }} />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+
+            {/* Cache RAG */}
+            <div className="rounded-xl border border-slate-600/30 bg-slate-800/40 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Cache RAG
+                </p>
+                <span className={`text-lg font-semibold ${monitoring.cache.hit_rate_pct >= 50 ? "text-emerald-300" : monitoring.cache.hit_rate_pct >= 20 ? "text-amber-300" : "text-slate-400"}`}>
+                  {monitoring.cache.hit_rate_pct}%
+                </span>
+              </div>
+              <div className="mb-3 h-2 rounded bg-slate-700/60">
+                <div
+                  className="h-2 rounded bg-emerald-500/70 transition-all duration-500"
+                  style={{ width: `${Math.min(100, monitoring.cache.hit_rate_pct)}%` }}
+                />
+              </div>
+              <ul className="space-y-1 text-xs text-slate-400">
+                <li className="flex justify-between">
+                  <span>Hits (cache)</span>
+                  <span className="text-emerald-300">{monitoring.cache.hits}</span>
+                </li>
+                <li className="flex justify-between">
+                  <span>Misses (Ollama)</span>
+                  <span className="text-slate-300">{monitoring.cache.misses}</span>
+                </li>
+                <li className="flex justify-between">
+                  <span>Total requêtes</span>
+                  <span className="text-slate-300">{monitoring.cache.total}</span>
+                </li>
+              </ul>
+            </div>
+
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500">Impossible de charger les métriques de monitoring.</p>
+        )}
       </section>
     </main>
   );
