@@ -404,9 +404,14 @@ def _bootstrap() -> None:
         )
         if telegram_poll in {"1", "true", "yes"}:
             asyncio.create_task(run_telegram_polling())
+            logger.info(
+                "[Startup][Telegram] Polling ACTIF (getUpdates) — les messages arrivent sans webhook HTTPS."
+            )
+        elif os.getenv("TELEGRAM_BOT_TOKEN", "").strip():
             logger.warning(
-                "[Startup][Telegram] Polling actif — désactive le webhook Telegram chez BotFather "
-                "si tu reçois des doubles réponses (webhook + polling sur le même message)."
+                "[Startup][Telegram] Polling INACTIF (ENABLE_TELEGRAM_POLLING≠true). "
+                "Les messages n'arrivent que si le webhook pointe vers "
+                "https://<domaine>/webhooks/telegram — sinon : ./scripts/fix_telegram.sh"
             )
 
         if os.getenv("ENABLE_WHATSAPP_QUEUE_POLLING", "").lower() in {"1", "true", "yes"}:

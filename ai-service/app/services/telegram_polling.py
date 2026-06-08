@@ -30,6 +30,21 @@ async def run_telegram_polling() -> None:
     webhook_cleared = False
 
     async with httpx.AsyncClient(timeout=60) as client:
+        # Webhook actif = getUpdates ne reçoit jamais les messages.
+        try:
+            del_resp = await client.post(
+                f"{api_url}/deleteWebhook",
+                json={"drop_pending_updates": False},
+            )
+            del_data = del_resp.json()
+            if del_data.get("ok"):
+                logger.info("[TelegramPolling] Webhook supprimé au démarrage (mode polling).")
+                webhook_cleared = True
+            else:
+                logger.warning("[TelegramPolling] deleteWebhook au démarrage: %s", del_data)
+        except Exception as e:  # noqa: BLE001
+            logger.error("[TelegramPolling] Impossible de supprimer le webhook: %s", e)
+
         while True:
             try:
                 params: dict[str, object] = {"timeout": 50}
@@ -111,7 +126,9 @@ async def run_telegram_polling() -> None:
                             if telegram_message_id is not None
                             else None
                         )
-                        await process_telegram_message(str(chat_id), text, tg_id_str)
+                        asyncio.create_task(
+                            process_telegram_message(str(chat_id), text, tg_id_str)
+                        )
                         continue
 
                     # 2. Message image -> OCR local puis RAG
@@ -156,8 +173,10 @@ async def run_telegram_polling() -> None:
                                 if telegram_message_id is not None
                                 else None
                             )
-                            await process_telegram_message(
-                                str(chat_id), combined_query, tg_id_str
+                            asyncio.create_task(
+                                process_telegram_message(
+                                    str(chat_id), combined_query, tg_id_str
+                                )
                             )
                         except Exception as e:  # noqa: BLE001
                             logger.error("[TelegramPolling] Erreur traitement image: %s", e)
