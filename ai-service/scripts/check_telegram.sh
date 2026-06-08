@@ -74,12 +74,27 @@ else
 fi
 echo ""
 
-echo "=== Test getUpdates (timeout 3s) ==="
-UPDATES="$(curl -sS --max-time 8 "https://api.telegram.org/bot${TOKEN}/getUpdates?timeout=3&limit=3")"
-echo "${UPDATES}" | head -c 600
+if [[ "${POLL}" =~ ^(1|true|yes)$ ]] && pm2 describe rdc-ai-service &>/dev/null; then
+  echo "=== Test getUpdates ==="
+  echo "SKIPPÉ — le polling PM2 tourne déjà ; un curl getUpdates ici provoque une erreur 409."
+  echo "Envoie un vrai message au bot puis : pm2 logs rdc-ai-service | grep 'Message texte reçu'"
+else
+  echo "=== Test getUpdates (timeout 3s) ==="
+  UPDATES="$(curl -sS --max-time 8 "https://api.telegram.org/bot${TOKEN}/getUpdates?timeout=3&limit=3")"
+  echo "${UPDATES}" | head -c 600
+  echo ""
+  if echo "${UPDATES}" | grep -q '"ok":false'; then
+    echo "→ getUpdates REFUSÉ"
+  fi
+fi
 echo ""
-if echo "${UPDATES}" | grep -q '"ok":false'; then
-  echo "→ getUpdates REFUSÉ (souvent webhook actif en mode polling)"
+
+echo "=== Doublons polling (409) ==="
+if pm2 logs rdc-ai-service --lines 100 --nostream 2>/dev/null | grep -q 'other getUpdates'; then
+  echo "PROBLÈME DÉTECTÉ : conflit 409 — deux instances pollent le même bot."
+  echo "  ./scripts/telegram_stop_duplicates.sh --restart"
+else
+  echo "(pas de 409 récent dans les logs — OK ou polling arrêté)"
 fi
 echo ""
 

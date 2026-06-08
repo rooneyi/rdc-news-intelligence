@@ -57,6 +57,10 @@ fi
 set_kv "TELEGRAM_BACKEND_ENDPOINT" "http://127.0.0.1:${PORT}"
 
 echo ""
+echo "=== Suppression doublons (PM2 / scripts parallèles) ==="
+"${ROOT}/scripts/telegram_stop_duplicates.sh" || true
+
+echo ""
 echo "=== Redémarrage rdc-ai-service ==="
 "${ROOT}/scripts/pm2_reload_env.sh"
 

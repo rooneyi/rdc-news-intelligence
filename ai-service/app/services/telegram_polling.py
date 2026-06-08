@@ -56,12 +56,21 @@ async def run_telegram_polling() -> None:
 
                 if not data.get("ok"):
                     desc = str(data.get("description", data))
-                    # Webhook actif → getUpdates renvoie 409 Conflict, le bot ne répond plus.
+                    code = data.get("error_code", resp.status_code)
+                    # Autre instance getUpdates (PC local, 2e PM2, script standalone).
+                    if code == 409 and "other getupdates" in desc.lower():
+                        logger.error(
+                            "[TelegramPolling] Conflit 409 : une AUTRE instance poll ce bot "
+                            "(PC local, PM2 rooney+root, ou scripts/telegram_polling.py). "
+                            "Lance : ./scripts/telegram_stop_duplicates.sh --restart"
+                        )
+                        await asyncio.sleep(15)
+                        continue
+                    # Webhook actif → getUpdates bloqué.
                     if (
                         not webhook_cleared
                         and (
-                            resp.status_code == 409
-                            or "Conflict" in desc
+                            code == 409
                             or "webhook is active" in desc.lower()
                         )
                     ):
