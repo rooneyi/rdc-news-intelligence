@@ -10,12 +10,16 @@ if [[ ! -x "${ROOT}/venv/bin/pip" ]]; then
   exit 1
 fi
 
+SITE="${ROOT}/venv/lib/python3.11/site-packages"
+if compgen -G "${SITE}/~tarlette*" >/dev/null 2>&1; then
+  echo "=== Nettoyage distribution pip corrompue (~tarlette) ==="
+  rm -rf "${SITE}"/~tarlette*
+fi
+
 echo "=== Pin starlette < 1.0 ==="
-"${ROOT}/venv/bin/pip" install 'starlette>=0.40.0,<1.0.0'
+"${ROOT}/venv/bin/pip" install --force-reinstall 'starlette>=0.40.0,<1.0.0'
 "${ROOT}/venv/bin/pip" show starlette | grep -E '^Version|^Name'
 
 echo ""
-echo "=== Redémarrage PM2 ==="
-pm2 restart rdc-ai-service --update-env
-sleep 5
-curl -sf "http://127.0.0.1:$("${ROOT}/scripts/read_app_port.sh")/health" && echo "" || echo "(health KO — voir pm2 logs)"
+echo "=== Redémarrage API (recover si PM2 vide ou port bloqué) ==="
+exec "${ROOT}/scripts/recover_api.sh"

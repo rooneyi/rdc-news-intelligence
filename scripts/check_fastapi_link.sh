@@ -15,14 +15,20 @@ echo "  Diagnostic FastAPI ↔ Next.js"
 echo "=============================================="
 echo ""
 
-echo "=== PM2 ==="
+echo "=== PM2 ($(whoami)) ==="
 pm2 list 2>/dev/null || echo "(pm2 indisponible)"
+if command -v sudo >/dev/null 2>&1; then
+  echo ""
+  echo "=== PM2 (root — si les apps tournent en root) ==="
+  sudo pm2 list 2>/dev/null | head -20 || echo "(sudo pm2 indisponible ou mot de passe requis)"
+fi
 echo ""
 
 echo "=== Port FastAPI attendu : ${PORT} ==="
-ss -tln 2>/dev/null | grep ":${PORT} " || echo "(rien n'écoute sur :${PORT})"
-if command -v lsof >/dev/null 2>&1; then
-  sudo lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN 2>/dev/null || lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN 2>/dev/null || true
+if [[ -x "${AI}/scripts/show_port_listener.sh" ]]; then
+  "${AI}/scripts/show_port_listener.sh" "${PORT}"
+else
+  ss -tln 2>/dev/null | grep ":${PORT} " || echo "(rien n'écoute sur :${PORT})"
 fi
 echo ""
 
@@ -31,6 +37,13 @@ HEALTH="$(curl -sS --max-time 5 "http://127.0.0.1:${PORT}/health" 2>&1 || true)"
 if echo "${HEALTH}" | grep -q '"service"'; then
   echo "OK — ${HEALTH}" | head -c 400
   echo ""
+elif echo "${HEALTH}" | grep -qi '<!doctype html'; then
+  echo "KO — AUTRE SERVICE sur :${PORT} (HTML, pas FastAPI). Souvent Django/Gunicorn."
+  echo "${HEALTH}" | head -c 300
+  echo ""
+  echo ""
+  echo "→ Lance : cd ai-service && ./scripts/recover_api.sh"
+  echo "  (libère 8000 avec sudo, ou bascule auto vers 8001)"
 else
   echo "KO — pas de JSON rdc-ai-service :"
   echo "${HEALTH}" | head -c 500
@@ -59,6 +72,8 @@ fi
 echo ""
 
 echo "=== Actions suggérées ==="
-echo "  cd ${AI} && ./scripts/fix_starlette_pin.sh"
-echo "  cd ${AI} && ./scripts/admin_clean_start.sh --with-frontend"
-echo "  cd ${FE} && pm2 restart rdc-frontend --update-env"
+echo "  cd ${AI} && ./scripts/recover_api.sh"
+echo "  # si port 8000 bloqué par root/autre user :"
+echo "  sudo fuser -v ${PORT}/tcp && sudo fuser -k ${PORT}/tcp"
+echo "  cd ${AI} && ./scripts/recover_api.sh"
+echo "  # ou PM2 root : sudo pm2 delete rdc-ai-service && cd ${AI} && ./scripts/recover_api.sh"

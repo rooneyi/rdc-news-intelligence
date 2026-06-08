@@ -42,7 +42,22 @@ echo ""
 echo "IMPORTANT nginx / Hestia : si Whapi webhook → domaine public, modifie le proxy :"
 echo "  proxy_pass http://127.0.0.1:${NEW_PORT};   # pour /health et /webhooks/"
 echo ""
+REPO_ROOT="$(cd "${ROOT}/.." && pwd)"
+FE_ENV="${REPO_ROOT}/frontend/.env.local"
+if [[ -d "${REPO_ROOT}/frontend" ]]; then
+  touch "${FE_ENV}"
+  for key in FASTAPI_URL NEXT_PUBLIC_FASTAPI_URL; do
+    if grep -q "^${key}=" "${FE_ENV}" 2>/dev/null; then
+      sed -i "s|^${key}=.*|${key}=http://127.0.0.1:${NEW_PORT}|" "${FE_ENV}"
+    else
+      echo "${key}=http://127.0.0.1:${NEW_PORT}" >> "${FE_ENV}"
+    fi
+  done
+  echo "frontend/.env.local → http://127.0.0.1:${NEW_PORT}"
+fi
+
 echo "Puis : ./scripts/pm2_reload_env.sh"
+echo "Frontend : cd ../frontend && pm2 restart rdc-frontend --update-env"
 echo ""
 
 exec "${ROOT}/scripts/pm2_reload_env.sh"
