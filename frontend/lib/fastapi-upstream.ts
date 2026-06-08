@@ -26,7 +26,7 @@ export function fastApiMisconfigMessage(status: number, baseUrl = getFastApiBase
   return (
     `FastAPI a renvoyé une page HTML (HTTP ${status}) au lieu de JSON. ` +
     `Vérifie que rdc-ai-service tourne (pm2 status) et que ` +
-    `NEXT_PUBLIC_FASTAPI_URL=${baseUrl} vaut http://127.0.0.1:8000 sur le VPS — ` +
+    `FASTAPI_URL / NEXT_PUBLIC_FASTAPI_URL=${baseUrl} doit pointer vers le port APP_PORT (ex. http://127.0.0.1:8001) — ` +
     `pas le domaine public (sinon nginx renvoie Next/Hestia, pas /rag ni /admin).`
   );
 }
