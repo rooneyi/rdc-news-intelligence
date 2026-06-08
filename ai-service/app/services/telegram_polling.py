@@ -27,6 +27,8 @@ async def run_telegram_polling() -> None:
 
     logger.info("[TelegramPolling] Démarrage du polling Telegram (getUpdates)…")
 
+    webhook_cleared = False
+
     async with httpx.AsyncClient(timeout=60) as client:
         while True:
             try:
@@ -38,6 +40,31 @@ async def run_telegram_polling() -> None:
                 data = resp.json()
 
                 if not data.get("ok"):
+                    desc = str(data.get("description", data))
+                    # Webhook actif → getUpdates renvoie 409 Conflict, le bot ne répond plus.
+                    if (
+                        not webhook_cleared
+                        and (
+                            resp.status_code == 409
+                            or "Conflict" in desc
+                            or "webhook is active" in desc.lower()
+                        )
+                    ):
+                        logger.warning(
+                            "[TelegramPolling] Webhook Telegram actif — suppression pour le polling…"
+                        )
+                        del_resp = await client.post(
+                            f"{api_url}/deleteWebhook",
+                            json={"drop_pending_updates": True},
+                        )
+                        del_data = del_resp.json()
+                        if del_data.get("ok"):
+                            logger.info("[TelegramPolling] Webhook supprimé — polling repris.")
+                            webhook_cleared = True
+                            continue
+                        logger.error(
+                            "[TelegramPolling] deleteWebhook échoué: %s", del_data
+                        )
                     logger.error("[TelegramPolling] Erreur getUpdates: %s", data)
                     await asyncio.sleep(5)
                     continue
