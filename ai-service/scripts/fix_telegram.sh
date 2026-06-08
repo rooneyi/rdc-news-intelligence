@@ -3,7 +3,7 @@
 #
 # Usage :
 #   ./scripts/fix_telegram.sh              # polling (supprime webhook)
-#   ./scripts/fix_telegram.sh --webhook    # webhook HTTPS (désactive le polling dans .env)
+#   ./scripts/fix_telegram.sh --webhook    # webhook HTTPS — RECOMMANDÉ si conflit 409 / PC local
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT}"

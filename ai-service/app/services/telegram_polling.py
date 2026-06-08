@@ -45,6 +45,8 @@ async def run_telegram_polling() -> None:
         except Exception as e:  # noqa: BLE001
             logger.error("[TelegramPolling] Impossible de supprimer le webhook: %s", e)
 
+        idle_polls = 0
+
         while True:
             try:
                 params: dict[str, object] = {"timeout": 50}
@@ -93,7 +95,22 @@ async def run_telegram_polling() -> None:
                     await asyncio.sleep(5)
                     continue
 
-                for update in data.get("result", []):
+                updates = data.get("result", [])
+                if updates:
+                    idle_polls = 0
+                    logger.info(
+                        "[TelegramPolling] %s message(s) reçu(s) de Telegram",
+                        len(updates),
+                    )
+                else:
+                    idle_polls += 1
+                    if idle_polls == 1 or idle_polls % 6 == 0:
+                        logger.info(
+                            "[TelegramPolling] En écoute getUpdates… (aucun message, cycle %s)",
+                            idle_polls,
+                        )
+
+                for update in updates:
                     last_update_id = update["update_id"] + 1
 
                     message = update.get("message")
