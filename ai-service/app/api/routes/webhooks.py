@@ -303,21 +303,25 @@ async def process_telegram_message(
                 return
             message_id = data["result"]["message_id"]
 
-            # 4. Traitement RAG IA (Normal, Raffiné ou Viral)
-            text_buffer = ""
-            sources_header = ""
+            # Une seule mise à jour finale (comme WhatsApp) — évite le flood editMessageText Telegram.
+            await _telegram_edit_message_text(
+                client,
+                base_url,
+                chat_id,
+                message_id,
+                "🕒 Analyse en cours (recherche + Mistral, 1–5 min sur le VPS)…",
+            )
 
-            # Analyse de la situation (Viralité transverse vs Local vs Nouveau)
-            reply_to_id = None
+            sources: list = []
+            verdict = ""
+            body = ""
+
             if should_use_viral_global(global_context):
                 group_count = global_context.get("group_count")
                 old_query = global_context.get("last_query", "Sujet transverse")
                 old_verdict = local_context.get("verdict", "") if local_context else ""
-                
-                logger.info(f"[Telegram] Sujet VIRAL détecté dans {group_count} groupes.")
-                text_buffer = f"🔥 *ALERTE VIRALITÉ* : Ce sujet circule actuellement dans {group_count} groupes en RDC. Voici une synthèse d'intelligence :\n\n"
-                
-                gen = rag_service.generate_viral_answer_stream(
+                logger.info("[Telegram] Sujet VIRAL détecté dans %s groupes.", group_count)
+                rag_res = await rag_service.generate_viral_full_answer(
                     query=query,
                     old_query=old_query,
                     old_verdict=old_verdict,
@@ -325,107 +329,84 @@ async def process_telegram_message(
                     channel="telegram",
                     query_embedding=query_embedding,
                 )
-                reply_to_id = local_context.get("root_message_id") if local_context else None
+                verdict = rag_res.get("verdict", "")
+                sources = rag_res.get("sources", [])
+                body = (
+                    f"🔥 ALERTE VIRALITÉ : Sujet détecté dans {group_count} groupes. "
+                    f"Synthèse :\n\n{verdict}"
+                )
 
             elif should_use_refined_local(local_context):
                 old_query = local_context.get("query", "Inconnue")
                 old_verdict = local_context.get("verdict", "")
-                reply_to_id = local_context.get("root_message_id")
-
                 logger.info("[Telegram] Génération d'une réponse raffinée locale.")
-                text_buffer = repeat_note_prefix()
-
-                gen = rag_service.generate_refined_answer_stream(
+                rag_res = await rag_service.generate_refined_full_answer(
                     query=query,
                     old_query=old_query,
                     old_verdict=old_verdict,
                     channel="telegram",
                     query_embedding=query_embedding,
                 )
+                verdict = rag_res.get("verdict", "")
+                sources = rag_res.get("sources", [])
+                body = f"{repeat_note_prefix()}{verdict}"
+
             else:
                 if should_show_repeat_indicator(local_context):
-                    text_buffer = repeat_note_prefix()
-                    reply_to_id = local_context.get("root_message_id")
                     logger.info("[Telegram] Sujet proche déjà vu — RAG standard + indicateur 💡")
                 else:
-                    reply_to_id = None
-                gen = rag_service.generate_answer_stream(query, channel="telegram", query_embedding=query_embedding)
+                    logger.info("[Telegram] RAG standard (nouvelle question)")
+                rag_res = await rag_service.generate_full_answer(
+                    query,
+                    channel="telegram",
+                    query_embedding=query_embedding,
+                )
+                verdict = rag_res.get("verdict", "")
+                sources = rag_res.get("sources", [])
+                prefix = repeat_note_prefix() if should_show_repeat_indicator(local_context) else ""
+                body = f"{prefix}{(verdict or '').strip()}".strip()
 
-            # Si on a un message racine locale, on essaie de citer
-            if reply_to_id:
-                try:
-                    async with httpx.AsyncClient() as client:
-                        await client.post(
-                            f"{base_url}/editMessageText",
-                            json={
-                                "chat_id": chat_id,
-                                "message_id": message_id,
-                                "text": text_buffer + "🕒 Analyse en cours...",
-                                "reply_to_message_id": int(reply_to_id)
-                            },
-                        )
-                except: pass
+            if sources and "SOURCES" not in body.upper():
+                lines = []
+                for i, source in enumerate(sources, 1):
+                    title = source.get("title") or "Source locale"
+                    url = source.get("url") or "(lien indisponible)"
+                    lines.append(f"[{i}] {title} - {url}")
+                body = f"{body}\n\n🔗 SOURCES LOCALES :\n" + "\n".join(lines)
 
-            async for event in gen:
-                event_type = event.get("type")
+            if not body.strip():
+                body = "⚠️ Aucune réponse générée. Réessaie ou vérifie les logs rdc-ai-service."
 
-                if event_type == "sources":
-                    sources = event.get("sources", [])
-                    if sources:
-                        lines = []
-                        for i, s in enumerate(sources, 1):
-                            url = s.get("url") or "(lien indisponible)"
-                            title = s.get("title") or "Source locale"
-                            lines.append(f"[{i}] {title} - {url}")
-                        sources_header = "🔗 SOURCES LOCALES :\n" + "\n".join(lines) + "\n\n"
+            logger.info("[Telegram] Réponse prête (%s car.) — envoi chat=%s", len(body), chat_id)
+            if not await _telegram_edit_message_text(
+                client, base_url, chat_id, message_id, body
+            ):
+                logger.warning("[Telegram] editMessageText échoué — envoi en nouveau message")
+                await _send_telegram_message(bot_token, chat_id, body)
 
-                        await _telegram_edit_message_text(
-                            client,
-                            base_url,
-                            chat_id,
-                            message_id,
-                            sources_header + (text_buffer or "🕒 Génération de la réponse…"),
-                        )
-
-                elif event_type == "summary_chunk":
-                    chunk = event.get("text", "")
-                    if not chunk:
-                        continue
-                    text_buffer += chunk
-
-                    await _telegram_edit_message_text(
-                        client,
-                        base_url,
-                        chat_id,
-                        message_id,
-                        sources_header + text_buffer,
-                    )
-
-                elif event_type == "error":
-                    error_message = event.get("message", "Erreur interne RAG")
-                    await _telegram_edit_message_text(
-                        client,
-                        base_url,
-                        chat_id,
-                        message_id,
-                        error_message,
-                    )
-                    break
-            
-            # Sauvegarder en mémoire à la fin du flux
-            if text_buffer and conversational_memory_enabled():
-                full_verdict = f"{sources_header}{text_buffer}"
+            if body.strip() and conversational_memory_enabled():
                 await memory_service.add_to_memory(
                     chat_id=chat_id,
                     query=query,
                     embedding=query_embedding,
-                    verdict=full_verdict,
-                    sources=[],
+                    verdict=body,
+                    sources=sources,
                     platform_message_id=str(message_id),
                 )
 
     except Exception as e:
-        logger.error(f"Erreur streaming Telegram: {e}")
+        logger.exception("[Telegram] Erreur traitement RAG chat=%s: %s", chat_id, e)
+        err_text = f"⚠️ Erreur lors du traitement : {str(e)[:200]}"
+        try:
+            if message_id is not None:
+                async with httpx.AsyncClient() as client:
+                    await _telegram_edit_message_text(
+                        client, base_url, chat_id, message_id, err_text
+                    )
+            else:
+                await _send_telegram_message(bot_token, chat_id, err_text)
+        except Exception as send_err:  # noqa: BLE001
+            logger.error("[Telegram] Impossible d'envoyer le message d'erreur: %s", send_err)
 
 
 async def _send_whatsapp_text_direct(phone_number: str, body: str) -> dict:
