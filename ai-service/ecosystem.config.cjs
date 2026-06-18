@@ -120,9 +120,10 @@ module.exports = {
       interpreter: "none",
       instances: 1,
       autorestart: true,
-      max_restarts: 30,
-      min_uptime: "15s",
-      max_memory_restart: "2G",
+      max_restarts: 50,
+      min_uptime: "30s",
+      // 2G trop bas : embeddings PyTorch + Chroma dépassent souvent → PM2 tue le process en plein RAG.
+      max_memory_restart: "3500M",
       env: {
         PYTHONUNBUFFERED: "1",
         ...fileEnv,
