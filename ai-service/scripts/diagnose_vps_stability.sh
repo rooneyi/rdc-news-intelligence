@@ -16,8 +16,17 @@ echo ""
 echo "=== RAM + swap ==="
 free -h
 echo ""
-if ! swapon --show 2>/dev/null | grep -q .; then
-  echo "ATTENTION : pas de SWAP — OOM killer très probable avec Ollama + FastAPI."
+SWAP_TOTAL_KB="$(awk '/SwapTotal/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"
+SWAP_USED_KB="$(awk '/SwapFree/ {free=$2} /SwapTotal/ {total=$2} END {print total-free}' /proc/meminfo 2>/dev/null || echo 0)"
+if [[ "${SWAP_TOTAL_KB}" -eq 0 ]]; then
+  echo "ATTENTION : pas de SWAP — risque OOM élevé avec Ollama + FastAPI."
+else
+  SWAP_USED_MB=$((SWAP_USED_KB / 1024))
+  echo "Swap actif : ${SWAP_USED_MB} Mo utilisés sur $((SWAP_TOTAL_KB / 1024)) Mo."
+  if [[ "${SWAP_USED_MB}" -gt 512 ]]; then
+    echo "→ Le VPS a déjà subi une forte pression mémoire (swap utilisé)."
+    echo "  Préfère orca-mini / qwen2.5:3b et OLLAMA_KEEP_ALIVE=10m au lieu de -1."
+  fi
 fi
 echo ""
 
@@ -27,10 +36,21 @@ echo ""
 
 echo "=== OOM killer (kernel a tué un processus ?) ==="
 if command -v journalctl >/dev/null 2>&1; then
-  journalctl -k --no-pager -n 30 2>/dev/null | grep -iE 'oom|killed process|out of memory' || echo "(aucun OOM récent dans journalctl -k)"
+  journalctl -k --no-pager -n 50 2>/dev/null | grep -iE 'oom|killed process|out of memory' || echo "(aucun OOM boot courant)"
+  echo ""
+  echo "OOM boot précédent (si reboot récent) :"
+  journalctl -k -b -1 --no-pager 2>/dev/null | grep -iE 'oom|killed process|out of memory' | tail -5 || echo "(aucun ou boot -1 indisponible)"
 else
   dmesg 2>/dev/null | grep -iE 'oom|killed process' | tail -5 || echo "(dmesg indisponible)"
 fi
+echo ""
+
+echo "=== Ollama (processus + modèle chargé) ==="
+pgrep -af '[o]llama' 2>/dev/null || echo "(processus ollama non listé)"
+curl -sS --max-time 3 http://127.0.0.1:11434/api/ps 2>/dev/null || echo "(api/ps indisponible)"
+echo ""
+OLLAMA_MODEL_EFF="$("${ROOT}/scripts/read_env_var.sh" OLLAMA_MODEL 2>/dev/null || true)"
+echo "OLLAMA_MODEL effectif (.env_file + .env) : ${OLLAMA_MODEL_EFF:-(inconnu)}"
 echo ""
 
 echo "=== PM2 ($(whoami)) ==="
@@ -64,13 +84,23 @@ echo ""
 echo ""
 
 echo "=== PM2 au boot (persistant ?) ==="
-if systemctl is-enabled pm2-root &>/dev/null 2>&1; then
-  echo "pm2-root : $(systemctl is-enabled pm2-root 2>/dev/null)"
-elif systemctl is-enabled pm2-rooney &>/dev/null 2>&1; then
-  echo "pm2-rooney : $(systemctl is-enabled pm2-rooney 2>/dev/null)"
+PM2_BOOT=""
+for unit in "pm2-$(whoami)" "pm2-root" "pm2-rooney"; do
+  if systemctl is-enabled "${unit}" &>/dev/null 2>&1; then
+    PM2_BOOT="${unit} : $(systemctl is-enabled ${unit} 2>/dev/null)"
+    break
+  fi
+done
+if [[ -n "${PM2_BOOT}" ]]; then
+  echo "OK — ${PM2_BOOT}"
 else
-  echo "PROBLÈME probable : PM2 pas activé au démarrage → après reboot VPS, rien ne tourne."
+  echo "PROBLÈME : PM2 pas activé au démarrage → après reboot, rien ne tourne jusqu'à relance manuelle."
   echo "  Lance : ./scripts/vps_enable_auto_start.sh"
+fi
+if command -v sudo >/dev/null 2>&1; then
+  echo ""
+  echo "Doublon PM2 root (doit être vide si tu utilises rooney) :"
+  sudo pm2 list 2>/dev/null | head -8 || echo "(sudo pm2 indisponible)"
 fi
 echo ""
 
