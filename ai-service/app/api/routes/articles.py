@@ -273,7 +273,7 @@ class LoadRequest(BaseModel):
 
 class CrawlerRunRequest(BaseModel):
     source_id: str = Field(default="all", description="ID source ou « all »")
-    limit: int = Field(default=30, ge=1, le=200)
+    limit: int = Field(default=30, ge=1, le=2000)
     page_range: Optional[str] = Field(
         default=None,
         description="Plage de pages listing, ex. 1:3",

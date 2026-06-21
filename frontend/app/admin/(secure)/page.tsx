@@ -445,7 +445,7 @@ export default function AdminPage() {
               disabled={adminJobBusy || crawlerStarting}
               className="rounded-lg border border-slate-600/40 bg-slate-900/60 px-3 py-2 text-sm text-slate-200"
             >
-              {[10, 20, 30, 50, 100].map((n) => (
+              {[10, 20, 30, 50, 100, 1000, 2000].map((n) => (
                 <option key={n} value={n}>
                   {n}
                 </option>
