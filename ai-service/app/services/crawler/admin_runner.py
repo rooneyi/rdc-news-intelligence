@@ -14,6 +14,10 @@ from app.services.train_pipeline import run_reembedding
 
 logger = logging.getLogger(__name__)
 
+# Options affichées dans l’admin (Articles max / source)
+CRAWL_LIMIT_OPTIONS: tuple[int, ...] = (10, 20, 30, 50, 100, 1000, 2000)
+CRAWL_LIMIT_MAX = max(CRAWL_LIMIT_OPTIONS)
+
 _lock = threading.Lock()
 
 

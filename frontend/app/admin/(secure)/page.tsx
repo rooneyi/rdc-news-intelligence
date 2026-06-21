@@ -18,6 +18,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useAdminBranding } from "@/app/admin/admin-branding-context";
+import { DEFAULT_CRAWL_LIMIT_OPTIONS, normalizeCrawlLimitOptions } from "@/lib/crawler-limits";
 import { SourcesPieChart } from "../SourcesPieChart";
 
 type AdminOverview = {
@@ -91,6 +92,9 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [crawlerJob, setCrawlerJob] = useState<CrawlerJob | null>(null);
   const [crawlLimit, setCrawlLimit] = useState(30);
+  const [crawlLimitOptions, setCrawlLimitOptions] = useState<number[]>([
+    ...DEFAULT_CRAWL_LIMIT_OPTIONS,
+  ]);
   const [crawlReembed, setCrawlReembed] = useState(true);
   const [crawlerStarting, setCrawlerStarting] = useState(false);
   const [crawlerError, setCrawlerError] = useState<string | null>(null);
@@ -149,6 +153,9 @@ export default function AdminPage() {
       if (!res.ok) return;
       const job = payload?.job as CrawlerJob | undefined;
       if (job) setCrawlerJob(job);
+      const options = normalizeCrawlLimitOptions(payload?.limit_options);
+      setCrawlLimitOptions(options);
+      setCrawlLimit((prev) => (options.includes(prev) ? prev : options[0] ?? 30));
     } catch {
       /* ignore polling errors */
     }
@@ -445,7 +452,7 @@ export default function AdminPage() {
               disabled={adminJobBusy || crawlerStarting}
               className="rounded-lg border border-slate-600/40 bg-slate-900/60 px-3 py-2 text-sm text-slate-200"
             >
-              {[10, 20, 30, 50, 100, 1000, 2000].map((n) => (
+              {crawlLimitOptions.map((n) => (
                 <option key={n} value={n}>
                   {n}
                 </option>

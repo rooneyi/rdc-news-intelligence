@@ -21,6 +21,8 @@ from app.services.admin_maintenance_runner import (
     schedule_maintenance_job,
 )
 from app.services.crawler.admin_runner import (
+    CRAWL_LIMIT_MAX,
+    CRAWL_LIMIT_OPTIONS,
     get_crawler_job_state,
     schedule_crawler_job,
 )
@@ -273,7 +275,7 @@ class LoadRequest(BaseModel):
 
 class CrawlerRunRequest(BaseModel):
     source_id: str = Field(default="all", description="ID source ou « all »")
-    limit: int = Field(default=30, ge=1, le=2000)
+    limit: int = Field(default=30, ge=1, le=CRAWL_LIMIT_MAX)
     page_range: Optional[str] = Field(
         default=None,
         description="Plage de pages listing, ex. 1:3",
@@ -321,7 +323,12 @@ async def admin_memory_flush():
 
 @router.get("/admin/crawler/status", summary="État du dernier crawl admin", tags=["Admin"])
 def admin_crawler_status():
-    return {"status": "ok", "job": get_crawler_job_state()}
+    return {
+        "status": "ok",
+        "job": get_crawler_job_state(),
+        "limit_options": list(CRAWL_LIMIT_OPTIONS),
+        "limit_max": CRAWL_LIMIT_MAX,
+    }
 
 
 @router.get("/admin/reembed/status", summary="État du job re-embedding / maintenance", tags=["Admin"])
