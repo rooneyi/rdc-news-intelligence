@@ -309,6 +309,7 @@ class TopicGateService:
         self.dynamic_min_frequency = int(os.getenv("TOPIC_GATE_DYNAMIC_MIN_FREQUENCY", "4"))
         self.dynamic_min_word_len = int(os.getenv("TOPIC_GATE_DYNAMIC_MIN_WORD_LEN", "4"))
         self.semantic_threshold = float(os.getenv("TOPIC_GATE_SEMANTIC_THRESHOLD", "0.38"))
+        self.skip_llm = os.getenv("TOPIC_GATE_SKIP_LLM", "true").lower() in {"1", "true", "yes"}
         self._dynamic_keywords_by_theme: dict[str, list[str]] = {theme: [] for theme in THEME_KEYWORDS}
         self._last_dynamic_refresh = 0.0
         self.embedding_service = EmbeddingService()
@@ -407,6 +408,11 @@ class TopicGateService:
         # Permet de capturer des thèmes sans mots-clés exacts (ex: "Tshisekedi est-il mort ?")
         semantic_decision = self._semantic_classification(cleaned_text)
         if semantic_decision.should_activate:
+            return semantic_decision
+
+        if self.skip_llm:
+            if self.keyword_mode in {"hybrid", "keywords-first"} and keyword_decision.should_activate:
+                return keyword_decision
             return semantic_decision
 
         # 3. Fallback IA générative (Lent sur CPU, > 30s-5m)

@@ -38,6 +38,7 @@ class LLMService:
         self.num_thread = int(os.getenv("OLLAMA_NUM_THREAD", "4"))
         self.msg_num_predict = int(os.getenv("OLLAMA_NUM_PREDICT_MSG", "256"))
         self.web_num_predict = int(os.getenv("OLLAMA_NUM_PREDICT_WEB", "300"))
+        self.rag_article_chars = int(os.getenv("OLLAMA_RAG_ARTICLE_CHARS", "300"))
         # keep_alive=-1 (entier) : modèle reste chargé — évite le cold start de 3-5 min.
         self.keep_alive = normalize_ollama_keep_alive(os.getenv("OLLAMA_KEEP_ALIVE", "-1"))
         raw_fallbacks = os.getenv("OLLAMA_FALLBACK_MODELS", "mistral:latest,mistral")
@@ -84,7 +85,7 @@ class LLMService:
     def _build_prompt(self, query: str, articles: List[ArticleOut], channel: str = "web") -> str:
         # On réduit un peu la taille du contexte pour accélérer Mistral
         context = "\n".join([
-            f"[{i+1}] {a.title}: {a.content[:300]} (Lien: {a.link})" for i, a in enumerate(articles)
+            f"[{i+1}] {a.title}: {a.content[:self.rag_article_chars]} (Lien: {a.link})" for i, a in enumerate(articles)
         ])
         
         # Même structure verdict + explication que WhatsApp/Telegram pour éviter des réponses « web » plus vagues.
@@ -95,7 +96,8 @@ Format strict :
 📝 EXPLICATION : (développement complet mais dense : qui, quoi, quand si présent dans les textes)
 🔗 SOURCES : (titres + liens des articles utilisés)"""
 
-        return f"""[INST] Tu es un expert fact-checker journaliste en RDC. Réponds à la question ou vérifie l'information en utilisant UNIQUEMENT les articles fournis.
+        return f"""[INST] Tu es un expert fact-checker journaliste en RDC. Réponds UNIQUEMENT en français.
+Réponds à la question ou vérifie l'information en utilisant UNIQUEMENT les articles fournis.
 Si l'information n'est pas dans les articles, dis que tu ne peux pas vérifier. Ne crée aucune fausse information.
 
 {format_instruction}
@@ -184,7 +186,7 @@ Articles de référence :
 
     def _build_refined_prompt(self, query: str, old_query: str, old_verdict: str, articles: List[ArticleOut], channel: str = "web") -> str:
         context = "\n".join([
-            f"[{i+1}] {a.title}: {a.content[:300]} (Lien: {a.link})" for i, a in enumerate(articles)
+            f"[{i+1}] {a.title}: {a.content[:self.rag_article_chars]} (Lien: {a.link})" for i, a in enumerate(articles)
         ])
         
         format_instruction = f"""Réponds pour le canal « {channel} », ton clair et structuré, emojis discrets.
@@ -215,7 +217,7 @@ Ta tâche est de :
 
     def _build_viral_refined_prompt(self, query: str, old_query: str, old_verdict: str, articles: List[ArticleOut], group_count: int, channel: str = "web") -> str:
         context = "\n".join([
-            f"[{i+1}] {a.title}: {a.content[:300]} (Lien: {a.link})" for i, a in enumerate(articles)
+            f"[{i+1}] {a.title}: {a.content[:self.rag_article_chars]} (Lien: {a.link})" for i, a in enumerate(articles)
         ])
         
         virality_note = f"⚠️ ATTENTION : Ce sujet est actuellement VIRAL et a été détecté dans {group_count} groupes différents en RDC." if group_count > 1 else ""
